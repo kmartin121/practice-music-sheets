@@ -317,17 +317,112 @@ export function fillImpliedRestsFromSpacing(
   return next;
 }
 
+/** A principal note or rest placed on the measure timeline (times in divisions). */
+type TimedEvent = {
+  onset: number;
+  length: number;
+  voice: string;
+  note: Note;
+  defaultX: number | null;
+};
+
+function readTokenDuration(chunk: string): number {
+  const match = chunk.match(/<duration\b[^>]*>\s*([^<\s]+)\s*</i);
+  const raw = match ? Number(match[1]) : NaN;
+  return Number.isFinite(raw) && raw > 0 ? raw : 0;
+}
+
+function readTokenVoice(chunk: string): string | null {
+  const match = chunk.match(/<voice\b[^>]*>\s*([^<\s]+)\s*</i);
+  return match ? match[1] : null;
+}
+
+function sameTone(a: { pitch: string; octave: number }, b: { pitch: string; octave: number }) {
+  return a.pitch === b.pitch && a.octave === b.octave;
+}
+
 /**
- * Walk `<note>` / `<forward>` in document order so Audiveris time gaps become rests.
- * (Default fast-xml-parser objects lose interleaving order between those tags.)
+ * Collapse several voices into the single-line model: notes that start together
+ * become one chord, and each event lasts until the next onset so the bar still adds up.
+ */
+function mergeVoicesByOnset(
+  events: TimedEvent[],
+  voiceOrder: string[],
+  divisions: number,
+): { notes: Note[]; defaultXs: (number | null)[] } {
+  const voiceRank = (voice: string) => voiceOrder.indexOf(voice);
+  const pitched = events.filter((e) => !isRest(e.note.duration));
+  const coveredByPitched = (onset: number) =>
+    pitched.some((p) => p.onset <= onset && onset < p.onset + p.length);
+  const kept = events.filter((e) => !isRest(e.note.duration) || !coveredByPitched(e.onset));
+
+  const onsets = [...new Set(kept.map((e) => e.onset))].sort((a, b) => a - b);
+  const measureEnd = Math.max(...events.map((e) => e.onset + e.length));
+  const notes: Note[] = [];
+  const defaultXs: (number | null)[] = [];
+
+  onsets.forEach((onset, i) => {
+    const atOnset = kept
+      .filter((e) => e.onset === onset)
+      .sort((a, b) => {
+        const restOrder = Number(isRest(a.note.duration)) - Number(isRest(b.note.duration));
+        return restOrder !== 0 ? restOrder : voiceRank(a.voice) - voiceRank(b.voice);
+      });
+    const [primaryEvent, ...others] = atOnset;
+    const gap = (onsets[i + 1] ?? measureEnd) - onset;
+    const note: Note = { ...primaryEvent.note };
+
+    if (!isRest(note.duration)) {
+      const chord = [...(note.chord ?? [])];
+      const grace = [...(note.grace ?? [])];
+      for (const other of others) {
+        if (isRest(other.note.duration)) continue;
+        for (const tone of [other.note, ...(other.note.chord ?? [])]) {
+          if (sameTone(tone, note) || chord.some((c) => sameTone(c, tone))) continue;
+          chord.push({
+            pitch: tone.pitch,
+            octave: tone.octave,
+            ...(tone.accidental ? { accidental: tone.accidental } : {}),
+            ...(tone.notehead ? { notehead: tone.notehead } : {}),
+          });
+        }
+        grace.push(...(other.note.grace ?? []));
+      }
+      if (chord.length > 0) note.chord = chord;
+      if (grace.length > 0) note.grace = grace;
+    }
+
+    if (primaryEvent.length !== gap && divisions > 0) {
+      note.duration = nearestDuration(gap / divisions, isRest(note.duration));
+      delete note.tuplet;
+    }
+    notes.push(note);
+    defaultXs.push(primaryEvent.defaultX);
+  });
+
+  return { notes, defaultXs };
+}
+
+/**
+ * Walk `<note>` / `<forward>` / `<backup>` in document order, tracking the time cursor
+ * per voice. (Default fast-xml-parser objects lose interleaving order between those tags.)
  */
 export function parseMeasureBodyInOrder(
   measureInnerXml: string,
   divisions: number,
 ): { notes: Note[]; defaultXs: (number | null)[] } {
-  const notes: Note[] = [];
-  const defaultXs: (number | null)[] = [];
-  let pendingGrace: GraceTone[] = [];
+  const events: TimedEvent[] = [];
+  const voiceOrder: string[] = [];
+  const lastEventByVoice = new Map<string, TimedEvent>();
+  const pendingGraceByVoice = new Map<string, GraceTone[]>();
+  let cursor = 0;
+
+  const noteVoice = (voice: string | null) => {
+    const id = voice ?? '1';
+    if (!voiceOrder.includes(id)) voiceOrder.push(id);
+    return id;
+  };
+
   const chunkParser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: '@_',
@@ -337,18 +432,30 @@ export function parseMeasureBodyInOrder(
     isArray: (name) => name === 'dot',
   });
 
-  const tokenRe = /<(note|forward)\b[\s\S]*?<\/\1>/gi;
+  const tokenRe = /<(note|forward|backup)\b[\s\S]*?<\/\1>/gi;
   let match: RegExpExecArray | null;
   while ((match = tokenRe.exec(measureInnerXml)) !== null) {
     const tag = match[1].toLowerCase();
     const chunk = match[0];
+    const raw = readTokenDuration(chunk);
+
+    if (tag === 'backup') {
+      cursor = Math.max(0, cursor - raw);
+      continue;
+    }
     if (tag === 'forward') {
-      const durMatch = chunk.match(/<duration\b[^>]*>\s*([^<\s]+)\s*</i);
-      const raw = durMatch ? Number(durMatch[1]) : NaN;
-      if (!Number.isNaN(raw) && raw > 0 && divisions > 0) {
-        notes.push(restFromBeats(raw / divisions));
-        defaultXs.push(null);
+      if (raw > 0 && divisions > 0) {
+        const event: TimedEvent = {
+          onset: cursor,
+          length: raw,
+          voice: noteVoice(readTokenVoice(chunk)),
+          note: restFromBeats(raw / divisions),
+          defaultX: null,
+        };
+        events.push(event);
+        lastEventByVoice.set(event.voice, event);
       }
+      cursor += raw;
       continue;
     }
 
@@ -360,21 +467,21 @@ export function parseMeasureBodyInOrder(
     }
     const noteNode = parsed.note as Record<string, unknown> | undefined;
     if (!noteNode) continue;
+    const voice = noteVoice(readTokenVoice(chunk));
 
-    // Cue notes are skipped; grace notes buffer until the next principal note.
+    // Cue notes are skipped; grace notes buffer until the next principal note in their voice.
     if (noteNode.cue != null) continue;
     if (noteNode.grace != null) {
       if (noteNode.chord != null) continue;
       const grace = parseGraceTone(noteNode, divisions);
-      if (grace) pendingGrace.push(grace);
+      if (grace) pendingGraceByVoice.set(voice, [...(pendingGraceByVoice.get(voice) ?? []), grace]);
       continue;
     }
 
     if (noteNode.chord != null) {
       const pitch = resolvePitch(noteNode);
-      if (!pitch || notes.length === 0) continue;
-      const prev = notes[notes.length - 1];
-      if (isRest(prev.duration)) continue;
+      const prev = lastEventByVoice.get(voice)?.note;
+      if (!pitch || !prev || isRest(prev.duration)) continue;
       const notehead = parseNotehead(noteNode);
       const tone = {
         pitch: pitch.step,
@@ -387,16 +494,41 @@ export function parseMeasureBodyInOrder(
     }
 
     const note = parseNote(noteNode, divisions);
-    if (note) {
-      if (pendingGrace.length > 0) {
-        note.grace = pendingGrace;
-        pendingGrace = [];
-      }
-      notes.push(note);
-      defaultXs.push(readDefaultX(noteNode));
+    if (!note) continue;
+    const pendingGrace = pendingGraceByVoice.get(voice);
+    if (pendingGrace?.length) {
+      note.grace = pendingGrace;
+      pendingGraceByVoice.delete(voice);
     }
+    const length = raw > 0 ? raw : Math.round(noteBeats(note) * divisions);
+    const event: TimedEvent = {
+      onset: cursor,
+      length,
+      voice,
+      note,
+      defaultX: readDefaultX(noteNode),
+    };
+    events.push(event);
+    lastEventByVoice.set(voice, event);
+    cursor += length;
   }
-  return { notes, defaultXs };
+
+  // Audiveris often fills an unused voice with a whole-bar rest; drop rest-only voices.
+  const realVoices = voiceOrder.filter((voice) =>
+    events.some((e) => e.voice === voice && !isRest(e.note.duration)),
+  );
+  const keptVoices = realVoices.length > 0 ? realVoices : voiceOrder.slice(0, 1);
+  const keptEvents = events
+    .filter((e) => keptVoices.includes(e.voice))
+    .sort((a, b) => a.onset - b.onset);
+
+  if (keptVoices.length <= 1) {
+    return {
+      notes: keptEvents.map((e) => e.note),
+      defaultXs: keptEvents.map((e) => e.defaultX),
+    };
+  }
+  return mergeVoicesByOnset(keptEvents, keptVoices, divisions);
 }
 
 function extractMeasureInners(xml: string): string[] {

@@ -418,6 +418,59 @@ describe('musicxml parse/serialize', () => {
     expect(measureFilledBeats(again.measures[0])).toBeCloseTo(4);
   });
 
+  it('drops a whole-bar rest voice that Audiveris pairs with the real notes', () => {
+    const rest = '<note><rest/><duration>32</duration><voice>1</voice><type>whole</type></note>';
+    const v2 = '<voice>2</voice>';
+    const xml = drumDoc(
+      [
+        rest,
+        '<backup><duration>32</duration></backup>',
+        drumNote('F', 4, 8, 'quarter', v2),
+        '<note><rest/><duration>8</duration><voice>2</voice><type>quarter</type></note>',
+        drumNote('E', 5, 4, 'eighth', v2),
+        drumNote('E', 5, 4, 'eighth', v2),
+        drumNote('F', 4, 8, 'quarter', v2),
+      ].join(''),
+    );
+    const score = parseMusicXml(xml);
+    expect(score.measures[0].notes.map((n) => n.duration)).toEqual(['q', 'qr', '8', '8', 'q']);
+    expect(measureFilledBeats(score.measures[0])).toBe(4);
+  });
+
+  it('merges simultaneous voices into chords by onset time', () => {
+    const upper = Array.from({ length: 8 }, () => drumNote('E', 5, 4, 'eighth')).join('');
+    const lower = Array.from({ length: 4 }, () =>
+      drumNote('F', 4, 8, 'quarter', '<voice>2</voice>'),
+    ).join('');
+    const xml = drumDoc(`${upper}<backup><duration>32</duration></backup>${lower}`);
+    const notes = parseMusicXml(xml).measures[0].notes;
+    expect(notes).toHaveLength(8);
+    expect(notes.every((n) => n.duration === '8')).toBe(true);
+    expect(notes.map((n) => (n.chord ?? []).map((c) => `${c.pitch}${c.octave}`))).toEqual([
+      ['F4'],
+      [],
+      ['F4'],
+      [],
+      ['F4'],
+      [],
+      ['F4'],
+      [],
+    ]);
+    expect(notes.every((n) => n.pitch === 'E' && n.octave === 5)).toBe(true);
+  });
+
+  it('ignores a trailing <backup> with no second voice', () => {
+    const xml = drumDoc(
+      `${Array.from({ length: 4 }, () => drumNote('F', 4, 8, 'quarter')).join('')}<backup><duration>32</duration></backup>`,
+    );
+    expect(parseMusicXml(xml).measures[0].notes.map((n) => n.duration)).toEqual([
+      'q',
+      'q',
+      'q',
+      'q',
+    ]);
+  });
+
   it('rejects empty and oversized input', () => {
     expect(() => parseMusicXml('')).toThrow(/empty/i);
     const huge = `<score-partwise>${'a'.repeat(MAX_MUSICXML_BYTES)}</score-partwise>`;
