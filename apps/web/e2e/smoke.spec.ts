@@ -101,5 +101,5 @@ test('print keeps memorize cues for practice-hidden measures', async ({ page }) 
   await page.emulateMedia({ media: 'print' });
   await expect(page.locator('.hidden-measure-cue')).toBeVisible();
   await expect(page.locator('.hidden-measure-cue-label')).toHaveText('memorize');
-  await expect(page.locator('.measure-hit').first()).toBeHidden();
+  await expect(page.locator('.measure-hit:visible')).toHaveCount(0);
 });

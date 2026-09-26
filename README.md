@@ -27,7 +27,7 @@ Local-first app for turning scanned melody sheets into editable digital MusicXML
 npm install
 ```
 
-3. (Optional, for e2e tests) Install Playwright Chromium once:
+`npm install` also downloads the Playwright Chromium build used by the e2e tests. If you skip install scripts (or the download fails), install it manually:
 
 ```bash
 cd apps/web && npx playwright install chromium
@@ -137,3 +137,9 @@ apps/omr-server   Local Audiveris wrapper
 sheets/           Sample MusicXML folder
 fixtures/         Test MusicXML + tiny PNG
 ```
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+[Audiveris](https://github.com/Audiveris/audiveris) is a separate program licensed under the [AGPL-3.0](https://github.com/Audiveris/audiveris/blob/master/LICENSE). It is not bundled with or included in this repository. You install it yourself, and the OMR sidecar runs it as an external process.

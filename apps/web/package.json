@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "postinstall": "playwright install chromium || echo \"Playwright Chromium download skipped; run: npx playwright install chromium\""
   },
   "dependencies": {
     "fast-xml-parser": "^5.2.5",
