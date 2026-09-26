@@ -42,10 +42,10 @@ const TYPE_TO_DURATION: Record<string, Duration> = {
   quarter: 'q',
   eighth: '8',
   '16th': '16',
-  '32nd': '16',
-  '64th': '16',
-  '128th': '16',
-  '256th': '16',
+  '32nd': '32',
+  '64th': '32',
+  '128th': '32',
+  '256th': '32',
 };
 
 function asArray<T>(value: T | T[] | undefined | null): T[] {
@@ -85,11 +85,14 @@ function nearestDuration(beats: number, isRest: boolean): Duration {
     { beats: 4, duration: 'w' },
     { beats: 3, duration: 'hd' },
     { beats: 2, duration: 'h' },
+    { beats: 1.5, duration: 'qd' },
     { beats: 1, duration: 'q' },
+    { beats: 0.75, duration: '8d' },
     { beats: 0.5, duration: '8' },
     { beats: 0.25, duration: '16' },
+    { beats: 0.125, duration: '32' },
   ];
-  let best = table[3];
+  let best = table[4];
   let bestDiff = Infinity;
   for (const row of table) {
     const diff = Math.abs(row.beats - beats);
@@ -120,10 +123,16 @@ function parseDuration(
   const dots = asArray(noteNode.dot as unknown).length;
   if (type && TYPE_TO_DURATION[type]) {
     const base = TYPE_TO_DURATION[type];
-    const baseBeats: Record<string, number> = { w: 4, h: 2, q: 1, '8': 0.5, '16': 0.25 };
+    const baseBeats: Record<string, number> = {
+      w: 4,
+      h: 2,
+      q: 1,
+      '8': 0.5,
+      '16': 0.25,
+      '32': 0.125,
+    };
     let beats = baseBeats[base] ?? 1;
-    // Approximate dotted values into our nearest supported duration
-    // (exact for dotted half → 3 beats → hd/hdr).
+    // Dotted half / quarter / eighth are exact; other dotted values snap to the nearest duration.
     for (let i = 0; i < dots; i++) beats *= 1.5;
     return nearestDuration(beats, isRest);
   }

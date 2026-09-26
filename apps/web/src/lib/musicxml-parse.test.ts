@@ -9,8 +9,39 @@ import {
   parseMusicXml,
 } from './musicxml-parse';
 import { serializeMusicXml } from './musicxml-serialize';
+import { measureFilledBeats } from './score-model';
 
 const fixtures = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../fixtures');
+
+/** Single-part 4/4 percussion document with divisions=8 (Audiveris default for drum scans). */
+function drumDoc(...measureBodies: string[]): string {
+  const measures = measureBodies
+    .map((body, i) => {
+      const attrs =
+        i === 0
+          ? '<attributes><divisions>8</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>percussion</sign></clef></attributes>'
+          : '';
+      return `<measure number="${i + 1}">${attrs}${body}</measure>`;
+    })
+    .join('\n');
+  return `<?xml version="1.0"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Snare</part-name></score-part></part-list>
+  <part id="P1">
+${measures}
+  </part>
+</score-partwise>`;
+}
+
+function drumNote(
+  step: string,
+  octave: number,
+  duration: number,
+  type: string,
+  extra = '',
+): string {
+  return `<note><unpitched><display-step>${step}</display-step><display-octave>${octave}</display-octave></unpitched><duration>${duration}</duration>${extra.includes('<voice>') ? '' : '<voice>1</voice>'}<type>${type}</type>${extra}</note>`;
+}
 
 describe('musicxml parse/serialize', () => {
   it('round-trips the sample melody fixture', () => {
@@ -121,13 +152,13 @@ describe('musicxml parse/serialize', () => {
     ]);
   });
 
-  it('maps unpitched display-step/octave, 32nd to 16th, and dotted quarter toward half', () => {
+  it('maps unpitched display-step/octave, 32nd notes, and dotted quarters', () => {
     const xml = readFileSync(resolve(fixtures, 'unpitched-notes.musicxml'), 'utf8');
     const score = parseMusicXml(xml);
     expect(score.measures[0].notes).toHaveLength(3);
     expect(score.measures[0].notes[0].pitch).toBe('E');
-    expect(score.measures[0].notes[1].duration).toBe('16');
-    expect(score.measures[0].notes[2].duration).toBe('h');
+    expect(score.measures[0].notes[1].duration).toBe('32');
+    expect(score.measures[0].notes[2].duration).toBe('qd');
   });
 
   it('keeps chord tones on the first note of a chord group', () => {
@@ -322,6 +353,42 @@ describe('musicxml parse/serialize', () => {
     expect(again.measures[0].notes[0].grace?.[0]).toEqual(
       expect.objectContaining({ pitch: 'G', octave: 5, notehead: 'x', slash: true }),
     );
+  });
+
+  it('keeps 32nd notes and dotted eighths at their real length', () => {
+    const xml = drumDoc(
+      [
+        drumNote('F', 4, 6, 'eighth', '<dot/>'),
+        drumNote('F', 4, 1, '32nd'),
+        drumNote('F', 4, 1, '32nd'),
+        drumNote('E', 5, 8, 'quarter'),
+        drumNote('F', 4, 12, 'quarter', '<dot/>'),
+        drumNote('F', 4, 4, 'eighth'),
+      ].join(''),
+    );
+    const score = parseMusicXml(xml);
+    expect(score.measures[0].notes.map((n) => n.duration)).toEqual([
+      '8d',
+      '32',
+      '32',
+      'q',
+      'qd',
+      '8',
+    ]);
+    expect(measureFilledBeats(score.measures[0])).toBe(4);
+
+    const serialized = serializeMusicXml(score);
+    expect(serialized).toMatch(/<type>32nd<\/type>/);
+    expect(serialized).toMatch(/<type>eighth<\/type>\s*<dot\/>/);
+    const again = parseMusicXml(serialized);
+    expect(again.measures[0].notes.map((n) => n.duration)).toEqual([
+      '8d',
+      '32',
+      '32',
+      'q',
+      'qd',
+      '8',
+    ]);
   });
 
   it('rejects empty and oversized input', () => {

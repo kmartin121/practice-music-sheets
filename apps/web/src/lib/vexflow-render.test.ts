@@ -17,6 +17,10 @@ describe('vexflow-render helpers', () => {
     expect(durationToVex('hdr')).toBe('hdr');
     expect(durationDots('hdr')).toBe(1);
     expect(durationDots('hr')).toBe(0);
+    expect(durationToVex('32')).toBe('32');
+    expect(durationToVex('8d')).toBe('8d');
+    expect(durationDots('8d')).toBe(1);
+    expect(durationDots('qdr')).toBe(1);
   });
 
   it('includes augmentation dots on dotted half rests', () => {

@@ -41,14 +41,20 @@ const DURATION_TO_VF: Record<Duration, string> = {
   h: 'h',
   hd: 'hd',
   q: 'q',
+  qd: 'qd',
   '8': '8',
+  '8d': '8d',
   '16': '16',
+  '32': '32',
   wr: 'wr',
   hr: 'hr',
   hdr: 'hdr',
   qr: 'qr',
+  qdr: 'qdr',
   '8r': '8r',
+  '8dr': '8dr',
   '16r': '16r',
+  '32r': '32r',
 };
 
 const ACCIDENTAL_TO_VF: Record<string, string> = {

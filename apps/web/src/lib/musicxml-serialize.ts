@@ -24,21 +24,31 @@ const DURATION_TO_TYPE: Record<string, string> = {
   h: 'half',
   hd: 'half',
   q: 'quarter',
+  qd: 'quarter',
   '8': 'eighth',
+  '8d': 'eighth',
   '16': '16th',
+  '32': '32nd',
 };
 
 const DURATION_DOTS: Record<string, number> = {
   hd: 1,
+  qd: 1,
+  '8d': 1,
 };
 
+const DIVISIONS_PER_QUARTER = 8;
+
 const DURATION_TO_DIVISIONS: Record<string, number> = {
-  w: 16,
-  h: 8,
-  hd: 12,
-  q: 4,
-  '8': 2,
-  '16': 1,
+  w: 32,
+  h: 16,
+  hd: 24,
+  q: 8,
+  qd: 12,
+  '8': 4,
+  '8d': 6,
+  '16': 2,
+  '32': 1,
 };
 
 const NOTEHEAD_TO_XML: Record<Notehead, string> = {
@@ -99,7 +109,7 @@ function noteXml(
 ): string {
   const base = duration.replace(/r$/, '');
   const type = DURATION_TO_TYPE[base] ?? 'quarter';
-  const dur = DURATION_TO_DIVISIONS[base] ?? 4;
+  const dur = DURATION_TO_DIVISIONS[base] ?? DIVISIONS_PER_QUARTER;
   const lines: string[] = ['      <note>'];
   if (options?.chord) {
     lines.push('        <chord/>');
@@ -137,7 +147,7 @@ export function serializeMusicXml(score: Score): string {
   const fifths = KEY_NAME_TO_FIFTHS[score.keySignature] ?? 0;
   const clefSign = score.clef === 'bass' ? 'F' : 'G';
   const clefLine = score.clef === 'bass' ? 4 : 2;
-  const divisions = 4;
+  const divisions = DIVISIONS_PER_QUARTER;
 
   const measureBlocks = score.measures
     .map((measure, index) => {

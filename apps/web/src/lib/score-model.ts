@@ -3,14 +3,20 @@ export type Duration =
   | 'h'
   | 'hd'
   | 'q'
+  | 'qd'
   | '8'
+  | '8d'
   | '16'
+  | '32'
   | 'wr'
   | 'hr'
   | 'hdr'
   | 'qr'
+  | 'qdr'
   | '8r'
-  | '16r';
+  | '8dr'
+  | '16r'
+  | '32r';
 
 export type Accidental = 'sharp' | 'flat' | 'natural';
 
@@ -75,14 +81,20 @@ const DURATION_BEATS: Record<Duration, number> = {
   h: 2,
   hd: 3,
   q: 1,
+  qd: 1.5,
   '8': 0.5,
+  '8d': 0.75,
   '16': 0.25,
+  '32': 0.125,
   wr: 4,
   hr: 2,
   hdr: 3,
   qr: 1,
+  qdr: 1.5,
   '8r': 0.5,
+  '8dr': 0.75,
   '16r': 0.25,
+  '32r': 0.125,
 };
 
 export function isRest(duration: Duration): boolean {
