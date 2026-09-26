@@ -4,6 +4,7 @@ import {
   durationToVex,
   pitchToVexKey,
   scoreToRenderInstructions,
+  snapStaffY,
   yToPitch,
 } from './vexflow-render';
 
@@ -18,6 +19,11 @@ describe('vexflow-render helpers', () => {
     const topLine = yToPitch(40, 40, 10, 'treble');
     expect(topLine.pitch).toBe('F');
     expect(topLine.octave).toBe(5);
+  });
+
+  it('snaps Y to staff line/space steps', () => {
+    expect(snapStaffY(42, 40, 10)).toBe(40);
+    expect(snapStaffY(47, 40, 10)).toBe(45);
   });
 
   it('builds render instructions including hidden measures', () => {

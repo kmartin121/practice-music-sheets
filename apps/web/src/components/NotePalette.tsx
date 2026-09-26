@@ -1,16 +1,16 @@
 import type { Duration } from '../lib/score-model';
 
 const PALETTE: { label: string; duration: Duration }[] = [
-  { label: '𝅝', duration: 'w' },
-  { label: '𝅗𝅥', duration: 'h' },
-  { label: '♩', duration: 'q' },
-  { label: '♪', duration: '8' },
-  { label: '𝅘𝅥𝅯', duration: '16' },
-  { label: '𝄽', duration: 'wr' },
-  { label: '𝄾', duration: 'hr' },
-  { label: ' comp', duration: 'qr' },
-  { label: ' contrap', duration: '8r' },
-  { label: '16r', duration: '16r' },
+  { label: 'Whole', duration: 'w' },
+  { label: 'Half', duration: 'h' },
+  { label: 'Quarter', duration: 'q' },
+  { label: '8th', duration: '8' },
+  { label: '16th', duration: '16' },
+  { label: 'Whole rest', duration: 'wr' },
+  { label: 'Half rest', duration: 'hr' },
+  { label: 'Quarter rest', duration: 'qr' },
+  { label: '8th rest', duration: '8r' },
+  { label: '16th rest', duration: '16r' },
 ];
 
 type Props = {
@@ -28,7 +28,7 @@ export function NotePalette({ disabled }: Props) {
           className="palette-item"
           draggable={!disabled}
           disabled={disabled}
-          title={item.duration}
+          title={item.label}
           data-duration={item.duration}
           onDragStart={(e) => {
             e.dataTransfer.setData(
@@ -36,6 +36,10 @@ export function NotePalette({ disabled }: Props) {
               JSON.stringify({ duration: item.duration }),
             );
             e.dataTransfer.effectAllowed = 'copy';
+            document.body.classList.add('palette-dragging');
+          }}
+          onDragEnd={() => {
+            document.body.classList.remove('palette-dragging');
           }}
         >
           {item.label}

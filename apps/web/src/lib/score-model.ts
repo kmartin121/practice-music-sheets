@@ -26,6 +26,8 @@ export type Note = {
 export type Measure = {
   id: string;
   notes: Note[];
+  /** Optional MusicXML/engraving width hint (pixels-ish). */
+  width?: number;
 };
 
 export type TimeSignature = {
@@ -121,6 +123,45 @@ export function addNoteToMeasure(
   };
 }
 
+/**
+ * Push notes that exceed each bar's time-signature capacity into following bars
+ * (creating new bars as needed). Keeps inserts from cramming past the barline.
+ */
+export function reflowOverflow(score: Score): Score {
+  const capacity = measureBeatCapacity(score);
+  const measures: Measure[] = score.measures.map((measure) => ({
+    ...measure,
+    notes: [...measure.notes],
+  }));
+
+  for (let i = 0; i < measures.length; i += 1) {
+    let filled = 0;
+    let splitAt = measures[i].notes.length;
+    for (let n = 0; n < measures[i].notes.length; n += 1) {
+      const next = filled + durationBeats(measures[i].notes[n].duration);
+      if (next > capacity + 1e-9) {
+        splitAt = n;
+        break;
+      }
+      filled = next;
+    }
+    if (splitAt >= measures[i].notes.length) continue;
+
+    const overflow = measures[i].notes.slice(splitAt);
+    measures[i] = { ...measures[i], notes: measures[i].notes.slice(0, splitAt) };
+    if (i + 1 < measures.length) {
+      measures[i + 1] = {
+        ...measures[i + 1],
+        notes: [...overflow, ...measures[i + 1].notes],
+      };
+    } else {
+      measures.push({ id: createId('measure'), notes: overflow });
+    }
+  }
+
+  return { ...score, measures };
+}
+
 export function removeNote(score: Score, noteId: string): Score {
   return {
     ...score,
@@ -129,6 +170,50 @@ export function removeNote(score: Score, noteId: string): Score {
       notes: measure.notes.filter((note) => note.id !== noteId),
     })),
   };
+}
+
+/** Move a note to another measure / pitch, preserving duration and modifiers. */
+export function relocateNote(
+  score: Score,
+  noteId: string,
+  toMeasureId: string,
+  pitch: string,
+  octave: number,
+  index?: number,
+): Score {
+  let found: Note | undefined;
+  let fromMeasureId: string | undefined;
+  let fromIndex = -1;
+  const stripped: Score = {
+    ...score,
+    measures: score.measures.map((measure) => {
+      const noteIndex = measure.notes.findIndex((n) => n.id === noteId);
+      if (noteIndex < 0) return measure;
+      found = measure.notes[noteIndex];
+      fromMeasureId = measure.id;
+      fromIndex = noteIndex;
+      return { ...measure, notes: measure.notes.filter((n) => n.id !== noteId) };
+    }),
+  };
+  if (!found) return score;
+
+  let insertAt = index;
+  if (
+    insertAt !== undefined &&
+    fromMeasureId === toMeasureId &&
+    fromIndex >= 0 &&
+    insertAt > fromIndex
+  ) {
+    // Account for removal shifting later indices left by one.
+    insertAt -= 1;
+  }
+
+  return addNoteToMeasure(stripped, toMeasureId, {
+    ...found,
+    pitch,
+    octave,
+    id: noteId,
+  }, insertAt);
 }
 
 export function updateScoreMeta(

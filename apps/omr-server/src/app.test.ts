@@ -10,6 +10,7 @@ import {
   findExportedMusicXml,
   mergeScorePartwiseDocuments,
   resetBusyFlag,
+  summarizeAudiverisFailure,
   writeFakeMusicXml,
   writeFakeMxl,
 } from './app.js';
@@ -213,5 +214,13 @@ describe('OMR sidecar', () => {
     const merged = mergeScorePartwiseDocuments([denseXml, mvt2Xml]);
     expect(countMusicXmlNotes(merged)).toBe(3);
     expect(merged).toMatch(/number="2"/);
+  });
+
+  it('summarizeAudiverisFailure surfaces staff-line detection errors', () => {
+    const log = `INFO  [sheet]            StepMonitoring 98   | GRID
+WARN  [sheet]                 SheetStub 411  | sheet Too few staff filaments: 0 This sheet does not seem to contain staff lines.
+INFO  [sheet]                 SheetStub 1194 | Sheet sheet flagged as invalid.
+WARN  []                      Main 307  | Exit forced. Failure`;
+    expect(summarizeAudiverisFailure(log, 1)).toMatch(/does not seem to contain staff lines/i);
   });
 });

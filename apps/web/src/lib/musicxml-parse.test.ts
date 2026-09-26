@@ -205,6 +205,60 @@ describe('musicxml parse/serialize', () => {
     expect(countMusicXmlNoteElements(xml)).toBe(0);
   });
 
+  it('turns ordered <forward> gaps into rests', () => {
+    const xml = `<?xml version="1.0"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Music</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>4</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <forward><duration>4</duration></forward>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><rest/><duration>4</duration><type>quarter</type></note>
+    </measure>
+  </part>
+</score-partwise>`;
+    const score = parseMusicXml(xml);
+    expect(score.measures[0].notes.map((n) => n.duration)).toEqual(['q', 'qr', '8', '8', 'qr']);
+  });
+
+  it('inserts a rest into Audiveris default-x gaps when the bar is underfull', () => {
+    const xml = `<?xml version="1.0"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Snare</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="0" implicit="yes" width="278">
+      <attributes>
+        <divisions>4</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>percussion</sign></clef>
+      </attributes>
+      <note default-x="49">
+        <unpitched><display-step>F</display-step><display-octave>4</display-octave></unpitched>
+        <duration>4</duration><type>quarter</type>
+      </note>
+      <note default-x="163">
+        <unpitched><display-step>C</display-step><display-octave>5</display-octave></unpitched>
+        <duration>2</duration><type>eighth</type>
+      </note>
+      <note default-x="191">
+        <unpitched><display-step>F</display-step><display-octave>4</display-octave></unpitched>
+        <duration>2</duration><type>eighth</type>
+      </note>
+      <note default-x="220">
+        <rest><display-step>B</display-step><display-octave>4</display-octave></rest>
+        <duration>4</duration><type>quarter</type>
+      </note>
+    </measure>
+  </part>
+</score-partwise>`;
+    const score = parseMusicXml(xml);
+    expect(score.measures[0].notes.map((n) => n.duration)).toEqual(['q', 'qr', '8', '8', 'qr']);
+    expect(score.measures[0].width).toBe(278);
+  });
+
   it('rejects empty and oversized input', () => {
     expect(() => parseMusicXml('')).toThrow(/empty/i);
     const huge = `<score-partwise>${'a'.repeat(MAX_MUSICXML_BYTES)}</score-partwise>`;

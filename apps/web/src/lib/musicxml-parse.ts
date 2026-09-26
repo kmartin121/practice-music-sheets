@@ -1,6 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import {
   createId,
+  durationBeats,
   isRest,
   type Accidental,
   type Duration,
@@ -190,6 +191,142 @@ function parseNote(noteNode: Record<string, unknown>, divisions: number): Note |
   };
 }
 
+function restFromBeats(beats: number): Note {
+  return {
+    id: createId('note'),
+    pitch: 'B',
+    octave: 4,
+    duration: nearestDuration(beats, true),
+  };
+}
+
+function readDefaultX(noteNode: Record<string, unknown>): number | null {
+  const raw = noteNode['@_default-x'] ?? noteNode['default-x'];
+  if (raw == null || raw === '') return null;
+  const value = Number(textOf(raw));
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Audiveris sometimes keeps visual spacing (default-x) for a rest it never emitted.
+ * When a bar is underfull, insert the missing duration into the largest default-x gap.
+ */
+export function fillImpliedRestsFromSpacing(
+  notes: Note[],
+  defaultXs: (number | null)[],
+  capacityBeats: number,
+): Note[] {
+  const filled = notes.reduce((sum, note) => sum + durationBeats(note.duration), 0);
+  const missing = capacityBeats - filled;
+  // Only synthesize rests when Audiveris left a visible hole (default-x), not for
+  // empty bars or ordinary underfull measures without spacing evidence.
+  if (missing <= 1e-9 || notes.length < 2) return notes;
+
+  const gaps: { insertIndex: number; gap: number }[] = [];
+  for (let i = 1; i < notes.length; i += 1) {
+    const left = defaultXs[i - 1];
+    const right = defaultXs[i];
+    if (left == null || right == null) continue;
+    gaps.push({ insertIndex: i, gap: right - left });
+  }
+  if (gaps.length === 0) return notes;
+
+  let best = gaps[0];
+  for (let i = 1; i < gaps.length; i += 1) {
+    if (gaps[i].gap > best.gap) best = gaps[i];
+  }
+
+  const otherGaps = gaps.filter((g) => g.insertIndex !== best.insertIndex).map((g) => g.gap);
+  const avgOther =
+    otherGaps.length > 0 ? otherGaps.reduce((sum, gap) => sum + gap, 0) / otherGaps.length : 0;
+
+  // Require a clearly larger hole than neighboring gaps (Audiveris omitted-rest pattern).
+  if (otherGaps.length > 0 && best.gap < avgOther * 1.5) return notes;
+
+  const next = [...notes];
+  next.splice(best.insertIndex, 0, restFromBeats(missing));
+  return next;
+}
+
+/**
+ * Walk `<note>` / `<forward>` in document order so Audiveris time gaps become rests.
+ * (Default fast-xml-parser objects lose interleaving order between those tags.)
+ */
+export function parseMeasureBodyInOrder(
+  measureInnerXml: string,
+  divisions: number,
+): { notes: Note[]; defaultXs: (number | null)[] } {
+  const notes: Note[] = [];
+  const defaultXs: (number | null)[] = [];
+  const chunkParser = new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: '@_',
+    processEntities: false,
+    htmlEntities: false,
+    trimValues: true,
+    isArray: (name) => name === 'dot',
+  });
+
+  const tokenRe = /<(note|forward)\b[\s\S]*?<\/\1>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = tokenRe.exec(measureInnerXml)) !== null) {
+    const tag = match[1].toLowerCase();
+    const chunk = match[0];
+    if (tag === 'forward') {
+      const durMatch = chunk.match(/<duration\b[^>]*>\s*([^<\s]+)\s*</i);
+      const raw = durMatch ? Number(durMatch[1]) : NaN;
+      if (!Number.isNaN(raw) && raw > 0 && divisions > 0) {
+        notes.push(restFromBeats(raw / divisions));
+        defaultXs.push(null);
+      }
+      continue;
+    }
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = chunkParser.parse(chunk) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const noteNode = parsed.note as Record<string, unknown> | undefined;
+    if (!noteNode) continue;
+
+    if (noteNode.chord != null) {
+      if (noteNode.grace != null || noteNode.cue != null) continue;
+      const pitch = resolvePitch(noteNode);
+      if (!pitch || notes.length === 0) continue;
+      const prev = notes[notes.length - 1];
+      if (isRest(prev.duration)) continue;
+      const notehead = parseNotehead(noteNode);
+      const tone = {
+        pitch: pitch.step,
+        octave: pitch.octave,
+        accidental: parseAccidental(noteNode),
+        ...(notehead ? { notehead } : {}),
+      };
+      prev.chord = [...(prev.chord ?? []), tone];
+      continue;
+    }
+
+    const note = parseNote(noteNode, divisions);
+    if (note) {
+      notes.push(note);
+      defaultXs.push(readDefaultX(noteNode));
+    }
+  }
+  return { notes, defaultXs };
+}
+
+function extractMeasureInners(xml: string): string[] {
+  const inners: string[] = [];
+  const re = /<measure\b[^>]*>([\s\S]*?)<\/measure>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(xml)) !== null) {
+    inners.push(match[1]);
+  }
+  return inners;
+}
+
 function countParsableNotes(part: Record<string, unknown>): number {
   let count = 0;
   for (const measureNode of asArray(part.measure as Record<string, unknown> | Record<string, unknown>[])) {
@@ -202,17 +339,27 @@ function countParsableNotes(part: Record<string, unknown>): number {
   return count;
 }
 
-function pickDensestPart(parts: Record<string, unknown>[]): Record<string, unknown> {
+function pickDensestPart(parts: Record<string, unknown>[]): {
+  part: Record<string, unknown>;
+  index: number;
+} {
   let best = parts[0];
+  let bestIndex = 0;
   let bestCount = countParsableNotes(best);
   for (let i = 1; i < parts.length; i++) {
     const count = countParsableNotes(parts[i]);
     if (count > bestCount) {
       best = parts[i];
+      bestIndex = i;
       bestCount = count;
     }
   }
-  return best;
+  return { part: best, index: bestIndex };
+}
+
+function extractPartInnerXml(xml: string, partIndex: number): string {
+  const partChunks = [...xml.matchAll(/<part\b[^>]*>[\s\S]*?<\/part>/gi)].map((m) => m[0]);
+  return partChunks[partIndex] ?? xml;
 }
 
 export function parseMusicXml(xml: string): Score {
@@ -273,8 +420,9 @@ export function parseMusicXml(xml: string): Score {
   if (parts.length === 0) {
     throw new MusicXmlParseError('No parts found in MusicXML');
   }
-  const part = pickDensestPart(parts);
+  const { part, index: partIndex } = pickDensestPart(parts);
   const measureNodes = asArray(part.measure as Record<string, unknown> | Record<string, unknown>[]);
+  const measureInners = extractMeasureInners(extractPartInnerXml(sanitized, partIndex));
 
   let clef: Score['clef'] = 'treble';
   let keySignature = 'C';
@@ -282,7 +430,8 @@ export function parseMusicXml(xml: string): Score {
   let divisions = 4;
   const measures: Measure[] = [];
 
-  for (const measureNode of measureNodes) {
+  for (let measureIndex = 0; measureIndex < measureNodes.length; measureIndex += 1) {
+    const measureNode = measureNodes[measureIndex];
     const attrs = measureNode.attributes as Record<string, unknown> | undefined;
     if (attrs) {
       const div = Number(textOf(attrs.divisions));
@@ -292,6 +441,7 @@ export function parseMusicXml(xml: string): Score {
       const sign = textOf(clefNode?.sign).toLowerCase();
       if (sign === 'g') clef = 'treble';
       if (sign === 'f') clef = 'bass';
+      // Percussion / TAB etc. still render on a treble-like staff in v1.
 
       const keyNode = asArray(attrs.key as Record<string, unknown> | Record<string, unknown>[])[0];
       const fifths = Number(textOf(keyNode?.fifths));
@@ -307,32 +457,51 @@ export function parseMusicXml(xml: string): Score {
       }
     }
 
-    const notes: Note[] = [];
-    for (const noteNode of asArray(measureNode.note as Record<string, unknown> | Record<string, unknown>[])) {
-      // Fold MusicXML chord tones onto the preceding note so dyads render.
-      if (noteNode.chord != null) {
-        if (noteNode.grace != null || noteNode.cue != null) continue;
-        const pitch = resolvePitch(noteNode);
-        if (!pitch || notes.length === 0) continue;
-        const prev = notes[notes.length - 1];
-        if (isRest(prev.duration)) continue;
-        const notehead = parseNotehead(noteNode);
-        const tone = {
-          pitch: pitch.step,
-          octave: pitch.octave,
-          accidental: parseAccidental(noteNode),
-          ...(notehead ? { notehead } : {}),
-        };
-        prev.chord = [...(prev.chord ?? []), tone];
-        continue;
+    const inner = measureInners[measureIndex] ?? '';
+    const capacityBeats = timeSignature.beats * (4 / timeSignature.beatType);
+    let notes: Note[];
+    if (inner.length > 0) {
+      const parsed = parseMeasureBodyInOrder(inner, divisions);
+      notes = fillImpliedRestsFromSpacing(parsed.notes, parsed.defaultXs, capacityBeats);
+    } else {
+      // Fallback if measure regex missed (malformed whitespace, etc.).
+      const collected: Note[] = [];
+      const defaultXs: (number | null)[] = [];
+      for (const noteNode of asArray(
+        measureNode.note as Record<string, unknown> | Record<string, unknown>[],
+      )) {
+        if (noteNode.chord != null) {
+          if (noteNode.grace != null || noteNode.cue != null) continue;
+          const pitch = resolvePitch(noteNode);
+          if (!pitch || collected.length === 0) continue;
+          const prev = collected[collected.length - 1];
+          if (isRest(prev.duration)) continue;
+          const notehead = parseNotehead(noteNode);
+          const tone = {
+            pitch: pitch.step,
+            octave: pitch.octave,
+            accidental: parseAccidental(noteNode),
+            ...(notehead ? { notehead } : {}),
+          };
+          prev.chord = [...(prev.chord ?? []), tone];
+          continue;
+        }
+        const note = parseNote(noteNode, divisions);
+        if (note) {
+          collected.push(note);
+          defaultXs.push(readDefaultX(noteNode));
+        }
       }
-      const note = parseNote(noteNode, divisions);
-      if (note) notes.push(note);
+      notes = fillImpliedRestsFromSpacing(collected, defaultXs, capacityBeats);
     }
 
     measures.push({
       id: createId('measure'),
       notes,
+      ...(Number.isFinite(Number(textOf(measureNode['@_width']))) &&
+      Number(textOf(measureNode['@_width'])) > 0
+        ? { width: Number(textOf(measureNode['@_width'])) }
+        : {}),
     });
   }
 

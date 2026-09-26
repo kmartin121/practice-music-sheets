@@ -15,6 +15,7 @@ export type RenderMeasure = {
   id: string;
   notes: RenderNote[];
   hidden: boolean;
+  width?: number;
 };
 
 export type RenderScore = {
@@ -89,6 +90,15 @@ export function yToPitch(
   return { pitch: pitches[idx], octave: octaves[idx] };
 }
 
+/** Snap a local Y to the nearest staff line/space (for drop guides). */
+export function snapStaffY(y: number, staffTop: number, lineSpacing: number): number {
+  const step = lineSpacing / 2;
+  const maxSteps = 14; // matches yToPitch pitch tables
+  const steps = Math.round((y - staffTop) / step);
+  const clamped = Math.min(Math.max(steps, 0), maxSteps);
+  return staffTop + clamped * step;
+}
+
 export function scoreToRenderInstructions(
   score: Score,
   hiddenMeasureIds: ReadonlySet<string> = new Set(),
@@ -101,6 +111,7 @@ export function scoreToRenderInstructions(
     measures: score.measures.map((measure) => ({
       id: measure.id,
       hidden: hiddenMeasureIds.has(measure.id),
+      width: measure.width,
       notes: measure.notes.map((note) => ({
         id: note.id,
         keys: isRest(note.duration)

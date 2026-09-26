@@ -8,7 +8,7 @@ import { createBlankScore } from './score-model';
 describe('NotePalette', () => {
   it('sets drag payload for a quarter note', () => {
     render(<NotePalette />);
-    const quarter = screen.getByTitle('q');
+    const quarter = screen.getByTitle('Quarter');
     const dataTransfer = {
       setData: vi.fn(),
       effectAllowed: '',

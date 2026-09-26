@@ -3,7 +3,10 @@ import type { Duration, Score } from '../lib/score-model';
 import {
   addEmptyMeasure,
   addNoteToMeasure,
+  createId,
   measureOverflows,
+  reflowOverflow,
+  relocateNote,
   removeNote,
   updateScoreMeta,
 } from '../lib/score-model';
@@ -61,14 +64,44 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
   }, []);
 
   const onDropNote = useCallback(
-    (measureId: string, duration: Duration, pitch: string, octave: number) => {
+    (
+      measureId: string,
+      duration: Duration,
+      pitch: string,
+      octave: number,
+      index?: number,
+    ) => {
+      const id = createId('note');
       markDirty(
-        addNoteToMeasure(score, measureId, {
-          pitch,
-          octave,
-          duration,
-        }),
+        reflowOverflow(
+          addNoteToMeasure(
+            score,
+            measureId,
+            {
+              id,
+              pitch,
+              octave,
+              duration,
+            },
+            index,
+          ),
+        ),
       );
+      setSelectedNoteId(id);
+    },
+    [markDirty, score],
+  );
+
+  const onMoveNote = useCallback(
+    (
+      noteId: string,
+      measureId: string,
+      pitch: string,
+      octave: number,
+      index?: number,
+    ) => {
+      markDirty(reflowOverflow(relocateNote(score, noteId, measureId, pitch, octave, index)));
+      setSelectedNoteId(noteId);
     },
     [markDirty, score],
   );
@@ -204,6 +237,7 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
           onSelectNote={setSelectedNoteId}
           onToggleMeasureHidden={onToggleMeasureHidden}
           onDropNote={onDropNote}
+          onMoveNote={onMoveNote}
         />
       </div>
     </div>

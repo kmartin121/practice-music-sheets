@@ -68,6 +68,43 @@ export async function defaultResolveAudiverisBin(): Promise<string | null> {
   return null;
 }
 
+/** Pull a short human reason from Audiveris batch logs (mostly on stdout). */
+export function summarizeAudiverisFailure(log: string, exitCode: number | null): string {
+  const lines = log
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^.*?\| /, '').trim())
+    .filter(Boolean);
+
+  const patterns: RegExp[] = [
+    /does not seem to contain staff lines/i,
+    /Too few staff filaments/i,
+    /No regularly spaced lines found/i,
+    /Could not export since transcription did not complete/i,
+    /Sheet .+ flagged as invalid/i,
+    /StepException: (.+)/i,
+    /Error in export/i,
+  ];
+
+  for (const pattern of patterns) {
+    for (const line of lines) {
+      const match = line.match(pattern);
+      if (match) {
+        if (pattern.source.startsWith('StepException') && match[1]) {
+          return `Audiveris could not read this scan: ${match[1]}`;
+        }
+        return `Audiveris could not read this scan: ${line}`;
+      }
+    }
+  }
+
+  const warnOrError = lines.find((line) => /^(WARN|ERROR)/i.test(line));
+  if (warnOrError) {
+    return `Audiveris could not read this scan: ${warnOrError.replace(/^(WARN|ERROR)\s*/i, '')}`;
+  }
+
+  return `Audiveris exited with code ${exitCode ?? 'unknown'}`;
+}
+
 export async function defaultRunAudiveris(
   bin: string,
   inputPath: string,
@@ -77,7 +114,12 @@ export async function defaultRunAudiveris(
     const child = spawn(bin, ['-batch', '-export', '-output', outputDir, inputPath], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    // Audiveris writes almost all diagnostics to stdout, not stderr.
+    let stdout = '';
     let stderr = '';
+    child.stdout.on('data', (d: Buffer) => {
+      stdout += d.toString();
+    });
     child.stderr.on('data', (d: Buffer) => {
       stderr += d.toString();
     });
@@ -92,7 +134,7 @@ export async function defaultRunAudiveris(
     child.on('close', (code) => {
       clearTimeout(timer);
       if (code === 0) resolve();
-      else reject(new Error(stderr || `Audiveris exited with code ${code}`));
+      else reject(new Error(summarizeAudiverisFailure(`${stdout}\n${stderr}`, code)));
     });
   });
 }
