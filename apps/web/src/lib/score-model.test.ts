@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   addNoteToMeasure,
+  copyNote,
   createBlankScore,
+  durationBeats,
   measureFilledBeats,
   measureOverflows,
   reflowOverflow,
@@ -10,6 +12,11 @@ import {
 } from './score-model';
 
 describe('score-model', () => {
+  it('counts a dotted half rest as three beats', () => {
+    expect(durationBeats('hdr')).toBe(3);
+    expect(durationBeats('hd')).toBe(3);
+  });
+
   it('creates a blank sheet with empty measures', () => {
     const score = createBlankScore({ measureCount: 3, title: 'Practice' });
     expect(score.title).toBe('Practice');
@@ -118,5 +125,46 @@ describe('score-model', () => {
     }
     expect(measureFilledBeats(score.measures[0])).toBe(4);
     expect(measureOverflows(score, score.measures[0])).toBe(false);
+  });
+
+  it('copies a note with a new id immediately after the original', () => {
+    let score = createBlankScore({ measureCount: 1 });
+    const measureId = score.measures[0].id;
+    score = addNoteToMeasure(score, measureId, {
+      pitch: 'C',
+      octave: 4,
+      duration: 'q',
+      accidental: 'sharp',
+      grace: [{ id: 'grace-1', pitch: 'D', octave: 4, duration: '16', slash: true }],
+    });
+    score = addNoteToMeasure(score, measureId, { pitch: 'E', octave: 4, duration: 'q' });
+    const originalId = score.measures[0].notes[0].id;
+
+    const { score: next, newNoteId } = copyNote(score, originalId);
+    expect(newNoteId).toBeTruthy();
+    expect(next.measures[0].notes).toHaveLength(3);
+    expect(next.measures[0].notes.map((n) => n.pitch)).toEqual(['C', 'C', 'E']);
+    expect(next.measures[0].notes[1].id).toBe(newNoteId);
+    expect(next.measures[0].notes[1].id).not.toBe(originalId);
+    expect(next.measures[0].notes[1].accidental).toBe('sharp');
+    expect(next.measures[0].notes[1].grace?.[0].id).not.toBe('grace-1');
+  });
+
+  it('reflows when a copied note overflows the bar', () => {
+    let score = createBlankScore({
+      measureCount: 1,
+      timeSignature: { beats: 4, beatType: 4 },
+    });
+    const measureId = score.measures[0].id;
+    for (let i = 0; i < 4; i += 1) {
+      score = addNoteToMeasure(score, measureId, { pitch: 'C', octave: 4, duration: 'q' });
+    }
+    const lastId = score.measures[0].notes[3].id;
+    const { score: next, newNoteId } = copyNote(score, lastId);
+    expect(newNoteId).toBeTruthy();
+    expect(next.measures).toHaveLength(2);
+    expect(next.measures[0].notes).toHaveLength(4);
+    expect(next.measures[1].notes).toHaveLength(1);
+    expect(next.measures[1].notes[0].id).toBe(newNoteId);
   });
 });

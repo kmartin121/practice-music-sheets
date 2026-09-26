@@ -83,12 +83,13 @@ export function countMusicXmlNoteElements(xml: string): number {
 function nearestDuration(beats: number, isRest: boolean): Duration {
   const table: { beats: number; duration: Duration }[] = [
     { beats: 4, duration: 'w' },
+    { beats: 3, duration: 'hd' },
     { beats: 2, duration: 'h' },
     { beats: 1, duration: 'q' },
     { beats: 0.5, duration: '8' },
     { beats: 0.25, duration: '16' },
   ];
-  let best = table[2];
+  let best = table[3];
   let bestDiff = Infinity;
   for (const row of table) {
     const diff = Math.abs(row.beats - beats);
@@ -121,7 +122,8 @@ function parseDuration(
     const base = TYPE_TO_DURATION[type];
     const baseBeats: Record<string, number> = { w: 4, h: 2, q: 1, '8': 0.5, '16': 0.25 };
     let beats = baseBeats[base] ?? 1;
-    // Approximate dotted values into our nearest supported duration.
+    // Approximate dotted values into our nearest supported duration
+    // (exact for dotted half → 3 beats → hd/hdr).
     for (let i = 0; i < dots; i++) beats *= 1.5;
     return nearestDuration(beats, isRest);
   }

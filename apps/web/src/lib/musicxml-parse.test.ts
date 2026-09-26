@@ -36,6 +36,29 @@ describe('musicxml parse/serialize', () => {
     expect(again.measures[1].notes[1].duration).toBe('hr');
   });
 
+  it('parses and round-trips a dotted half (3-beat) rest', () => {
+    const xml = `<?xml version="1.0"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Music</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>4</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><rest/><duration>12</duration><type>half</type><dot/></note>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+    </measure>
+  </part>
+</score-partwise>`;
+    const score = parseMusicXml(xml);
+    expect(score.measures[0].notes[0].duration).toBe('hdr');
+    const again = parseMusicXml(serializeMusicXml(score));
+    expect(again.measures[0].notes[0].duration).toBe('hdr');
+    expect(serializeMusicXml(score)).toMatch(/<type>half<\/type>\s*<dot\/>/);
+  });
+
   it('rejects XXE-shaped documents', () => {
     const xml = readFileSync(resolve(fixtures, 'xxe-attack.musicxml'), 'utf8');
     expect(() => parseMusicXml(xml)).toThrow(/ENTITY/i);

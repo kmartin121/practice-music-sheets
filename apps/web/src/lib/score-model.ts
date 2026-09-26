@@ -1,4 +1,16 @@
-export type Duration = 'w' | 'h' | 'q' | '8' | '16' | 'wr' | 'hr' | 'qr' | '8r' | '16r';
+export type Duration =
+  | 'w'
+  | 'h'
+  | 'hd'
+  | 'q'
+  | '8'
+  | '16'
+  | 'wr'
+  | 'hr'
+  | 'hdr'
+  | 'qr'
+  | '8r'
+  | '16r';
 
 export type Accidental = 'sharp' | 'flat' | 'natural';
 
@@ -61,11 +73,13 @@ export type Score = {
 const DURATION_BEATS: Record<Duration, number> = {
   w: 4,
   h: 2,
+  hd: 3,
   q: 1,
   '8': 0.5,
   '16': 0.25,
   wr: 4,
   hr: 2,
+  hdr: 3,
   qr: 1,
   '8r': 0.5,
   '16r': 0.25,
@@ -185,6 +199,36 @@ export function removeNote(score: Score, noteId: string): Score {
       notes: measure.notes.filter((note) => note.id !== noteId),
     })),
   };
+}
+
+/** Deep-clone a note with fresh ids (including grace tones). */
+export function cloneNote(note: Note): Note {
+  return {
+    ...note,
+    id: createId('note'),
+    chord: note.chord?.map((tone) => ({ ...tone })),
+    grace: note.grace?.map((g) => ({ ...g, id: createId('grace') })),
+  };
+}
+
+/**
+ * Insert a copy of the selected note immediately after it in the same measure.
+ * Returns the updated score and the new note's id (or null if not found).
+ */
+export function copyNote(
+  score: Score,
+  noteId: string,
+): { score: Score; newNoteId: string | null } {
+  for (const measure of score.measures) {
+    const index = measure.notes.findIndex((n) => n.id === noteId);
+    if (index < 0) continue;
+    const clone = cloneNote(measure.notes[index]);
+    return {
+      score: reflowOverflow(addNoteToMeasure(score, measure.id, clone, index + 1)),
+      newNoteId: clone.id,
+    };
+  }
+  return { score, newNoteId: null };
 }
 
 /** Move a note to another measure / pitch, preserving duration and modifiers. */

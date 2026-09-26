@@ -36,6 +36,11 @@ describe('Editor practice + dirty state', () => {
     fireEvent.click(screen.getByTestId('practice-toggle'));
     expect(screen.getByText(/Practice mode/i)).toBeInTheDocument();
 
+    fireEvent.click(screen.getByTestId('measure-numbers-toggle'));
+    expect(screen.getByTestId('measure-numbers-toggle')).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(screen.getByTestId('measure-numbers-toggle'));
+    expect(screen.getByTestId('measure-numbers-toggle')).toHaveAttribute('aria-pressed', 'true');
+
     fireEvent.change(screen.getByLabelText('Score title'), {
       target: { value: 'Edited' },
     });
@@ -76,5 +81,18 @@ describe('Editor practice + dirty state', () => {
       />,
     );
     expect(screen.getByTestId('omr-summary')).toHaveTextContent(/none mapped onto the staff/i);
+  });
+
+  it('shows a disabled Copy note control until a note is selected', () => {
+    const score = createBlankScore({ title: 'Test', measureCount: 1 });
+    render(
+      <Editor
+        initialScore={score}
+        meta={{ filename: null, fileHandle: null, dir: null }}
+        onBack={() => undefined}
+        onMetaChange={() => undefined}
+      />,
+    );
+    expect(screen.getByTestId('copy-note')).toBeDisabled();
   });
 });

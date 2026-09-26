@@ -11,6 +11,7 @@ import {
   Beam,
   Fraction,
   Stem,
+  Dot,
 } from 'vexflow';
 import type { Score } from '../lib/score-model';
 import { scoreToRenderInstructions, snapStaffY, yToPitch } from '../lib/vexflow-render';
@@ -30,6 +31,7 @@ const PALETTE_MIME = 'application/x-note-palette';
 type Props = {
   score: Score;
   practiceMode: boolean;
+  showMeasureNumbers: boolean;
   hiddenMeasureIds: ReadonlySet<string>;
   selectedNoteId: string | null;
   onSelectNote: (noteId: string | null) => void;
@@ -98,20 +100,37 @@ function insertSlotFromX(
   return best;
 }
 
-function staveWidthForMeasure(
-  noteCount: number,
-  engravingWidth: number | undefined,
-  systemStart: boolean,
-): number {
+function measureBaseWidth(noteCount: number, engravingWidth: number | undefined): number {
   const fromContent = Math.max(MEASURE_WIDTH, 48 + noteCount * NOTE_SLOT_PX);
   const fromXml = engravingWidth && engravingWidth > 0 ? engravingWidth : 0;
-  const base = Math.max(fromContent, fromXml);
-  return systemStart ? base + SYSTEM_START_EXTRA : base;
+  return Math.max(fromContent, fromXml);
+}
+
+/**
+ * Column widths shared across systems so barlines line up vertically.
+ * Each column uses the max content width of that slot on any system;
+ * the first column also gets clef/key/time padding.
+ */
+export function columnStaveWidths(
+  measures: ReadonlyArray<{ notes: { length: number }; width?: number }>,
+  measuresPerSystem = MEASURES_PER_SYSTEM,
+): number[] {
+  const columnBase = Array.from({ length: measuresPerSystem }, () => MEASURE_WIDTH);
+  for (let index = 0; index < measures.length; index += 1) {
+    const col = index % measuresPerSystem;
+    const measure = measures[index];
+    columnBase[col] = Math.max(
+      columnBase[col],
+      measureBaseWidth(measure.notes.length, measure.width),
+    );
+  }
+  return columnBase.map((base, col) => (col === 0 ? base + SYSTEM_START_EXTRA : base));
 }
 
 export function ScoreCanvas({
   score,
   practiceMode,
+  showMeasureNumbers,
   hiddenMeasureIds,
   selectedNoteId,
   onSelectNote,
@@ -161,15 +180,12 @@ export function ScoreCanvas({
 
     const laidOut: LaidOutMeasure[] = [];
     let maxRight = 40;
+    const staveWidths = columnStaveWidths(instructions.measures);
     for (let index = 0; index < instructions.measures.length; index += 1) {
       const measure = instructions.measures[index];
       const systemIndex = Math.floor(index / MEASURES_PER_SYSTEM);
       const measureInSystem = index % MEASURES_PER_SYSTEM;
-      const staveWidth = staveWidthForMeasure(
-        measure.notes.length,
-        measure.width,
-        measureInSystem === 0,
-      );
+      const staveWidth = staveWidths[measureInSystem];
       const x =
         measureInSystem === 0
           ? 20
@@ -259,13 +275,15 @@ export function ScoreCanvas({
       }
       stave.setContext(context).draw();
 
-      const numberLabel = document.createElement('div');
-      numberLabel.className = 'measure-number no-print';
-      numberLabel.textContent = String(measureNumber);
-      numberLabel.style.left = `${x}px`;
-      numberLabel.style.top = `${y + STAVE_HEIGHT - 18}px`;
-      numberLabel.style.width = `${staveWidth}px`;
-      overlay.appendChild(numberLabel);
+      if (showMeasureNumbers) {
+        const numberLabel = document.createElement('div');
+        numberLabel.className = 'measure-number no-print';
+        numberLabel.textContent = String(measureNumber);
+        numberLabel.style.left = `${x}px`;
+        numberLabel.style.top = `${y + STAVE_HEIGHT - 18}px`;
+        numberLabel.style.width = `${staveWidth}px`;
+        overlay.appendChild(numberLabel);
+      }
 
       const hit = document.createElement('div');
       hit.className = 'measure-hit';
@@ -344,6 +362,11 @@ export function ScoreCanvas({
           });
           if (n.accidental && !n.isRest) {
             note.addModifier(new Accidental(n.accidental));
+          }
+          if (n.dots && n.dots > 0) {
+            for (let d = 0; d < n.dots; d += 1) {
+              Dot.buildAndAttach([note], { all: true });
+            }
           }
           if (n.grace && n.grace.length > 0) {
             const graceNotes = n.grace.map((g) => {
@@ -477,7 +500,7 @@ export function ScoreCanvas({
     return () => {
       document.body.classList.remove('note-dragging');
     };
-  }, [score, practiceMode, hiddenMeasureIds, selectedNoteId]);
+  }, [score, practiceMode, showMeasureNumbers, hiddenMeasureIds, selectedNoteId]);
 
   return (
     <div className="score-canvas-wrap" data-testid="score-canvas">

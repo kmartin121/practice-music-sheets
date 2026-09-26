@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createBlankScore, addNoteToMeasure } from './score-model';
 import {
+  durationDots,
   durationToVex,
   pitchToVexKey,
   scoreToRenderInstructions,
@@ -13,6 +14,24 @@ describe('vexflow-render helpers', () => {
     expect(pitchToVexKey('C', 4, 'sharp')).toBe('c#/4');
     expect(durationToVex('q')).toBe('q');
     expect(durationToVex('8r')).toBe('8r');
+    expect(durationToVex('hdr')).toBe('hdr');
+    expect(durationDots('hdr')).toBe(1);
+    expect(durationDots('hr')).toBe(0);
+  });
+
+  it('includes augmentation dots on dotted half rests', () => {
+    let score = createBlankScore({ measureCount: 1 });
+    score = addNoteToMeasure(score, score.measures[0].id, {
+      pitch: 'B',
+      octave: 4,
+      duration: 'hdr',
+    });
+    const render = scoreToRenderInstructions(score);
+    expect(render.measures[0].notes[0]).toMatchObject({
+      duration: 'hdr',
+      isRest: true,
+      dots: 1,
+    });
   });
 
   it('maps staff Y to nearest pitch', () => {

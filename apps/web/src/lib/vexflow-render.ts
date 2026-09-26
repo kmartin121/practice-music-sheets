@@ -16,6 +16,8 @@ export type RenderNote = {
   duration: string;
   accidental?: string;
   isRest: boolean;
+  /** Augmentation dots to the right of the notehead/rest (e.g. dotted half). */
+  dots?: number;
   grace?: RenderGraceNote[];
 };
 
@@ -37,11 +39,13 @@ export type RenderScore = {
 const DURATION_TO_VF: Record<Duration, string> = {
   w: 'w',
   h: 'h',
+  hd: 'hd',
   q: 'q',
   '8': '8',
   '16': '16',
   wr: 'wr',
   hr: 'hr',
+  hdr: 'hdr',
   qr: 'qr',
   '8r': '8r',
   '16r': '16r',
@@ -76,6 +80,13 @@ export function pitchToVexKey(
 
 export function durationToVex(duration: Duration): string {
   return DURATION_TO_VF[duration];
+}
+
+/** Count augmentation dots encoded in our duration codes (`hd` / `hdr` → 1). */
+export function durationDots(duration: Duration): number {
+  const bare = duration.replace(/r$/, '');
+  const match = /d+$/.exec(bare);
+  return match ? match[0].length : 0;
 }
 
 /** Map Y offset within a staff (top=0) to nearest pitch for treble/bass. */
@@ -120,30 +131,34 @@ export function scoreToRenderInstructions(
       id: measure.id,
       hidden: hiddenMeasureIds.has(measure.id),
       width: measure.width,
-      notes: measure.notes.map((note) => ({
-        id: note.id,
-        keys: isRest(note.duration)
-          ? [score.clef === 'bass' ? 'd/3' : 'b/4']
-          : [
-              pitchToVexKey(note.pitch, note.octave, note.accidental, note.notehead),
-              ...(note.chord ?? []).map((tone) =>
-                pitchToVexKey(tone.pitch, tone.octave, tone.accidental, tone.notehead),
-              ),
-            ],
-        duration: durationToVex(note.duration),
-        accidental: note.accidental ? ACCIDENTAL_TO_VF[note.accidental] : undefined,
-        isRest: isRest(note.duration),
-        ...(note.grace && note.grace.length > 0
-          ? {
-              grace: note.grace.map((g) => ({
-                keys: [pitchToVexKey(g.pitch, g.octave, g.accidental, g.notehead)],
-                duration: durationToVex(g.duration),
-                accidental: g.accidental ? ACCIDENTAL_TO_VF[g.accidental] : undefined,
-                ...(g.slash ? { slash: true } : {}),
-              })),
-            }
-          : {}),
-      })),
+      notes: measure.notes.map((note) => {
+        const dots = durationDots(note.duration);
+        return {
+          id: note.id,
+          keys: isRest(note.duration)
+            ? [score.clef === 'bass' ? 'd/3' : 'b/4']
+            : [
+                pitchToVexKey(note.pitch, note.octave, note.accidental, note.notehead),
+                ...(note.chord ?? []).map((tone) =>
+                  pitchToVexKey(tone.pitch, tone.octave, tone.accidental, tone.notehead),
+                ),
+              ],
+          duration: durationToVex(note.duration),
+          accidental: note.accidental ? ACCIDENTAL_TO_VF[note.accidental] : undefined,
+          isRest: isRest(note.duration),
+          ...(dots > 0 ? { dots } : {}),
+          ...(note.grace && note.grace.length > 0
+            ? {
+                grace: note.grace.map((g) => ({
+                  keys: [pitchToVexKey(g.pitch, g.octave, g.accidental, g.notehead)],
+                  duration: durationToVex(g.duration),
+                  accidental: g.accidental ? ACCIDENTAL_TO_VF[g.accidental] : undefined,
+                  ...(g.slash ? { slash: true } : {}),
+                })),
+              }
+            : {}),
+        };
+      }),
     })),
   };
 }

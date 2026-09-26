@@ -4,6 +4,7 @@ type Props = {
   score: Score;
   dirty: boolean;
   practiceMode: boolean;
+  showMeasureNumbers: boolean;
   selectedNoteId: string | null;
   canSave: boolean;
   showMusicXml: boolean;
@@ -13,10 +14,12 @@ type Props = {
   onKeyChange: (key: string) => void;
   onTimeChange: (beats: number, beatType: number) => void;
   onTogglePractice: () => void;
+  onToggleMeasureNumbers: () => void;
   onSave: () => void;
   onSaveAs: () => void;
   onPrint: () => void;
   onDeleteNote: () => void;
+  onCopyNote: () => void;
   onAddMeasure: () => void;
   onBack: () => void;
 };
@@ -27,6 +30,7 @@ export function Toolbar({
   score,
   dirty,
   practiceMode,
+  showMeasureNumbers,
   selectedNoteId,
   canSave,
   showMusicXml,
@@ -36,10 +40,12 @@ export function Toolbar({
   onKeyChange,
   onTimeChange,
   onTogglePractice,
+  onToggleMeasureNumbers,
   onSave,
   onSaveAs,
   onPrint,
   onDeleteNote,
+  onCopyNote,
   onAddMeasure,
   onBack,
 }: Props) {
@@ -98,8 +104,27 @@ export function Toolbar({
       >
         Practice
       </button>
+      <button
+        type="button"
+        className={`btn ${showMeasureNumbers ? 'active' : ''}`}
+        onClick={onToggleMeasureNumbers}
+        data-testid="measure-numbers-toggle"
+        aria-pressed={showMeasureNumbers}
+      >
+        Bar #s
+      </button>
       <button type="button" className="btn" onClick={onAddMeasure}>
         + Bar
+      </button>
+      <button
+        type="button"
+        className="btn"
+        onClick={onCopyNote}
+        disabled={!selectedNoteId}
+        data-testid="copy-note"
+        data-keep-note-selection=""
+      >
+        Copy note
       </button>
       <button
         type="button"
@@ -107,6 +132,7 @@ export function Toolbar({
         onClick={onDeleteNote}
         disabled={!selectedNoteId}
         data-testid="delete-note"
+        data-keep-note-selection=""
       >
         Delete note
       </button>

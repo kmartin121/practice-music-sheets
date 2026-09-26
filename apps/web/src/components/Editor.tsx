@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Duration, Score } from '../lib/score-model';
 import {
   addEmptyMeasure,
   addNoteToMeasure,
+  copyNote,
   createId,
   measureOverflows,
   reflowOverflow,
@@ -36,6 +37,7 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
   const [score, setScore] = useState(initialScore);
   const [dirty, setDirty] = useState(false);
   const [practiceMode, setPracticeMode] = useState(false);
+  const [showMeasureNumbers, setShowMeasureNumbers] = useState(true);
   const [hiddenMeasureIds, setHiddenMeasureIds] = useState<Set<string>>(() => new Set());
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -62,6 +64,18 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
     setDirty(true);
     setStatus(null);
   }, []);
+
+  useEffect(() => {
+    if (!selectedNoteId) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('.score-canvas-wrap, [data-keep-note-selection]')) return;
+      setSelectedNoteId(null);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [selectedNoteId]);
 
   const onDropNote = useCallback(
     (
@@ -155,33 +169,44 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
 
   return (
     <div className="editor" data-testid="editor">
-      <Toolbar
-        score={score}
-        dirty={dirty}
-        practiceMode={practiceMode}
-        selectedNoteId={selectedNoteId}
-        canSave={Boolean(meta.dir)}
-        showMusicXml={showMusicXml}
-        onToggleMusicXml={() => setShowMusicXml((v) => !v)}
-        onTitleChange={(title) => markDirty(updateScoreMeta(score, { title }))}
-        onClefChange={(clef) => markDirty(updateScoreMeta(score, { clef }))}
-        onKeyChange={(keySignature) => markDirty(updateScoreMeta(score, { keySignature }))}
-        onTimeChange={(beats, beatType) =>
-          markDirty(updateScoreMeta(score, { timeSignature: { beats, beatType } }))
-        }
-        onTogglePractice={() => setPracticeMode((p) => !p)}
-        onSave={() => void save(false)}
-        onSaveAs={() => void save(true)}
-        onPrint={() => window.print()}
-        onDeleteNote={() => {
-          if (!selectedNoteId) return;
-          markDirty(removeNote(score, selectedNoteId));
-          setSelectedNoteId(null);
-        }}
-        onAddMeasure={() => markDirty(addEmptyMeasure(score))}
-        onBack={onBack}
-      />
-      <NotePalette disabled={practiceMode} />
+      <div className="editor-chrome no-print">
+        <Toolbar
+          score={score}
+          dirty={dirty}
+          practiceMode={practiceMode}
+          showMeasureNumbers={showMeasureNumbers}
+          selectedNoteId={selectedNoteId}
+          canSave={Boolean(meta.dir)}
+          showMusicXml={showMusicXml}
+          onToggleMusicXml={() => setShowMusicXml((v) => !v)}
+          onTitleChange={(title) => markDirty(updateScoreMeta(score, { title }))}
+          onClefChange={(clef) => markDirty(updateScoreMeta(score, { clef }))}
+          onKeyChange={(keySignature) => markDirty(updateScoreMeta(score, { keySignature }))}
+          onTimeChange={(beats, beatType) =>
+            markDirty(updateScoreMeta(score, { timeSignature: { beats, beatType } }))
+          }
+          onTogglePractice={() => setPracticeMode((p) => !p)}
+          onToggleMeasureNumbers={() => setShowMeasureNumbers((v) => !v)}
+          onSave={() => void save(false)}
+          onSaveAs={() => void save(true)}
+          onPrint={() => window.print()}
+          onCopyNote={() => {
+            if (!selectedNoteId) return;
+            const { score: next, newNoteId } = copyNote(score, selectedNoteId);
+            if (!newNoteId) return;
+            markDirty(next);
+            setSelectedNoteId(newNoteId);
+          }}
+          onDeleteNote={() => {
+            if (!selectedNoteId) return;
+            markDirty(removeNote(score, selectedNoteId));
+            setSelectedNoteId(null);
+          }}
+          onAddMeasure={() => markDirty(addEmptyMeasure(score))}
+          onBack={onBack}
+        />
+        <NotePalette disabled={practiceMode} />
+      </div>
       {meta.fromOmr && (
         <p className="status no-print" data-testid="omr-summary">
           OMR import: {score.measures.length} bars, {noteCount} notes
@@ -232,6 +257,7 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
         <ScoreCanvas
           score={score}
           practiceMode={practiceMode}
+          showMeasureNumbers={showMeasureNumbers}
           hiddenMeasureIds={hiddenMeasureIds}
           selectedNoteId={selectedNoteId}
           onSelectNote={setSelectedNoteId}

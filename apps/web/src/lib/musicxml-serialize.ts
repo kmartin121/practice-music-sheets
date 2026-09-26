@@ -22,14 +22,20 @@ const KEY_NAME_TO_FIFTHS: Record<string, number> = {
 const DURATION_TO_TYPE: Record<string, string> = {
   w: 'whole',
   h: 'half',
+  hd: 'half',
   q: 'quarter',
   '8': 'eighth',
   '16': '16th',
 };
 
+const DURATION_DOTS: Record<string, number> = {
+  hd: 1,
+};
+
 const DURATION_TO_DIVISIONS: Record<string, number> = {
   w: 16,
   h: 8,
+  hd: 12,
   q: 4,
   '8': 2,
   '16': 1,
@@ -112,6 +118,10 @@ function noteXml(
   }
   lines.push(`        <duration>${dur}</duration>`);
   lines.push(`        <type>${type}</type>`);
+  const dots = DURATION_DOTS[base] ?? 0;
+  for (let i = 0; i < dots; i += 1) {
+    lines.push('        <dot/>');
+  }
   if (accidental && !isRest(duration)) {
     lines.push(`        <accidental>${accidental}</accidental>`);
   }

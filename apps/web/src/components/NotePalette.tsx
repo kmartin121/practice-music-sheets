@@ -7,6 +7,7 @@ const PALETTE: { label: string; duration: Duration }[] = [
   { label: '8th', duration: '8' },
   { label: '16th', duration: '16' },
   { label: 'Whole rest', duration: 'wr' },
+  { label: 'Dotted half rest', duration: 'hdr' },
   { label: 'Half rest', duration: 'hr' },
   { label: 'Quarter rest', duration: 'qr' },
   { label: '8th rest', duration: '8r' },
