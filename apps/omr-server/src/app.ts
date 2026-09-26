@@ -169,26 +169,144 @@ export async function readMxlAsXml(mxlPath: string): Promise<string> {
   });
 }
 
+/** Audiveris writes book.xml / sheet#N/sheet#N.xml inside .omr trees — not MusicXML. */
+export function isAudiverisInternalXml(filePath: string): boolean {
+  const lower = filePath.replace(/\\/g, '/').toLowerCase();
+  const base = lower.split('/').pop() ?? '';
+  if (base === 'book.xml' || lower.endsWith('.omr.xml')) return true;
+  if (/\/sheet#\d+\//.test(lower) || /^sheet#\d+\.xml$/.test(base)) return true;
+  return false;
+}
+
+export function countMusicXmlNotes(xml: string): number {
+  return (xml.match(/<note[\s>]/gi) || []).length;
+}
+
+export function extractScorePartwise(xml: string): string | null {
+  const match = xml.match(/<score-partwise\b[\s\S]*<\/score-partwise>/i);
+  return match ? match[0] : null;
+}
+
+/**
+ * Concatenate measures from later movements into the first score-partwise document.
+ * Audiveris often splits one scan into input.mvt1.mxl + input.mvt2.mxl.
+ */
+export function mergeScorePartwiseDocuments(documents: string[]): string {
+  if (documents.length === 0) {
+    throw new Error('No MusicXML documents to merge');
+  }
+  if (documents.length === 1) return documents[0];
+
+  const bases = documents.map((doc) => extractScorePartwise(doc)).filter((d): d is string => Boolean(d));
+  if (bases.length === 0) {
+    throw new Error('No score-partwise documents to merge');
+  }
+  if (bases.length === 1) return bases[0];
+
+  let base = bases[0];
+  let measureNumber = 0;
+  const existing = base.match(/<measure\b[^>]*\bnumber="(\d+)"/gi) ?? [];
+  for (const m of existing) {
+    const n = Number(/number="(\d+)"/i.exec(m)?.[1] ?? 0);
+    if (n > measureNumber) measureNumber = n;
+  }
+
+  for (let i = 1; i < bases.length; i++) {
+    const extra = bases[i];
+    const partMatch = extra.match(/<part\b[^>]*>[\s\S]*?<\/part>/i);
+    if (!partMatch) continue;
+    const measureBlocks =
+      partMatch[0].match(/<measure\b[\s\S]*?<\/measure>/gi) ?? [];
+    if (measureBlocks.length === 0) continue;
+
+    const renumbered = measureBlocks.map((block) => {
+      measureNumber += 1;
+      if (/\bnumber="/i.test(block)) {
+        return block.replace(/\bnumber="[^"]*"/i, `number="${measureNumber}"`);
+      }
+      return block.replace(/<measure\b/i, `<measure number="${measureNumber}"`);
+    });
+
+    const insertAt = base.lastIndexOf('</part>');
+    if (insertAt < 0) continue;
+    base = `${base.slice(0, insertAt)}${renumbered.join('\n')}\n${base.slice(insertAt)}`;
+  }
+
+  return base;
+}
+
+async function loadMusicXmlCandidate(full: string): Promise<string | null> {
+  const lower = full.toLowerCase();
+  try {
+    let text: string;
+    if (lower.endsWith('.mxl')) {
+      text = await readMxlAsXml(full);
+    } else {
+      text = await readFile(full, 'utf8');
+    }
+    const partwise = extractScorePartwise(text);
+    return partwise ?? (text.includes('score-partwise') ? text : null);
+  } catch {
+    return null;
+  }
+}
+
 export async function findExportedMusicXml(outputDir: string): Promise<string> {
   const files = await walkFiles(outputDir);
+  const candidates: string[] = [];
+
   for (const full of files) {
     const lower = full.toLowerCase();
-    if (lower.endsWith('.musicxml') || (lower.endsWith('.xml') && !lower.endsWith('.omr.xml'))) {
-      return readFile(full, 'utf8');
+    if (lower.endsWith('.mxl') || lower.endsWith('.musicxml')) {
+      candidates.push(full);
+      continue;
+    }
+    if (lower.endsWith('.xml') && !isAudiverisInternalXml(full)) {
+      candidates.push(full);
     }
   }
-  // Audiveris defaults to compressed MusicXML (.mxl).
-  for (const full of files) {
-    if (full.toLowerCase().endsWith('.mxl')) {
-      return readMxlAsXml(full);
+
+  // Prefer movement order: mvt1 before mvt2, then lexical.
+  candidates.sort((a, b) => {
+    const ma = /\.mvt(\d+)/i.exec(a)?.[1];
+    const mb = /\.mvt(\d+)/i.exec(b)?.[1];
+    if (ma && mb) return Number(ma) - Number(mb);
+    if (ma) return -1;
+    if (mb) return 1;
+    return a.localeCompare(b);
+  });
+
+  const documents: string[] = [];
+  for (const full of candidates) {
+    const xml = await loadMusicXmlCandidate(full);
+    if (xml) documents.push(xml);
+  }
+
+  if (documents.length === 0) {
+    const names = files.map((f) => f.slice(outputDir.length + 1));
+    throw new Error(
+      names.length === 0
+        ? 'Audiveris produced no MusicXML output (empty output folder — recognition may have failed)'
+        : `Audiveris produced no MusicXML output (found: ${names.join(', ')})`,
+    );
+  }
+
+  // Multiple Audiveris movements from one scan → one continuous score.
+  if (documents.length > 1 && candidates.some((c) => /\.mvt\d+/i.test(c))) {
+    return mergeScorePartwiseDocuments(documents);
+  }
+
+  // Otherwise pick the densest score-partwise document.
+  let best = documents[0];
+  let bestNotes = countMusicXmlNotes(best);
+  for (let i = 1; i < documents.length; i++) {
+    const notes = countMusicXmlNotes(documents[i]);
+    if (notes > bestNotes) {
+      best = documents[i];
+      bestNotes = notes;
     }
   }
-  const names = files.map((f) => f.slice(outputDir.length + 1));
-  throw new Error(
-    names.length === 0
-      ? 'Audiveris produced no MusicXML output (empty output folder — recognition may have failed)'
-      : `Audiveris produced no MusicXML output (found: ${names.join(', ')})`,
-  );
+  return best;
 }
 
 function extensionFor(file: Express.Multer.File): string {
@@ -336,10 +454,14 @@ export async function writeFakeMusicXml(outputDir: string, xml: string): Promise
   await writeFile(join(outputDir, 'score.musicxml'), xml, 'utf8');
 }
 
-export async function writeFakeMxl(outputDir: string, xml: string): Promise<void> {
+export async function writeFakeMxl(
+  outputDir: string,
+  xml: string,
+  fileName = 'score.mxl',
+): Promise<void> {
   await mkdir(outputDir, { recursive: true });
-  const xmlPath = join(outputDir, 'score.xml');
-  const mxlPath = join(outputDir, 'score.mxl');
+  const xmlPath = join(outputDir, `${fileName}.tmp.xml`);
+  const mxlPath = join(outputDir, fileName);
   await writeFile(xmlPath, xml, 'utf8');
   await new Promise<void>((resolve, reject) => {
     const child = spawn('zip', ['-q', '-j', mxlPath, xmlPath], { stdio: 'ignore' });

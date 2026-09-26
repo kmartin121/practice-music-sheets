@@ -1,13 +1,53 @@
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createApp, resetBusyFlag, writeFakeMusicXml, writeFakeMxl } from './app.js';
+import {
+  countMusicXmlNotes,
+  createApp,
+  findExportedMusicXml,
+  mergeScorePartwiseDocuments,
+  resetBusyFlag,
+  writeFakeMusicXml,
+  writeFakeMxl,
+} from './app.js';
 
 const fixtures = resolve(dirname(fileURLToPath(import.meta.url)), '../../../fixtures');
 const sampleXml = readFileSync(resolve(fixtures, 'sample-melody.musicxml'), 'utf8');
 const tinyPng = readFileSync(resolve(fixtures, 'tiny.png'));
+
+const sparseXml = `<?xml version="1.0"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Empty</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><clef><sign>G</sign><line>2</line></clef></attributes>
+    </measure>
+  </part>
+</score-partwise>`;
+
+const denseXml = `<?xml version="1.0"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Dense</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+const mvt2Xml = `<?xml version="1.0"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Mvt2</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+    </measure>
+  </part>
+</score-partwise>`;
 
 afterEach(() => {
   resetBusyFlag();
@@ -121,5 +161,57 @@ describe('OMR sidecar', () => {
       .post('/omr')
       .attach('file', tinyPng, { filename: 'scan.png', contentType: 'image/png' });
     expect(res.status).toBe(504);
+  });
+
+  it('ignores Audiveris book.xml when .mxl exports exist', async () => {
+    const app = createApp({
+      resolveAudiverisBin: async () => '/usr/bin/fake-audiveris',
+      runAudiveris: async (_bin, _input, outputDir) => {
+        const omrDir = join(outputDir, 'input.omr');
+        mkdirSync(join(omrDir, 'sheet#1'), { recursive: true });
+        writeFileSync(join(omrDir, 'book.xml'), '<book><sheet/></book>', 'utf8');
+        writeFileSync(join(omrDir, 'sheet#1', 'sheet#1.xml'), '<sheet/>', 'utf8');
+        await writeFakeMxl(outputDir, sampleXml, 'input.mvt1.mxl');
+      },
+    });
+    const res = await request(app)
+      .post('/omr')
+      .attach('file', tinyPng, { filename: 'scan.png', contentType: 'image/png' });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('score-partwise');
+    expect(res.text).toContain('Sample Melody');
+    expect(res.text).not.toContain('<book>');
+  });
+
+  it('merges multi-movement Audiveris .mxl exports', async () => {
+    const app = createApp({
+      resolveAudiverisBin: async () => '/usr/bin/fake-audiveris',
+      runAudiveris: async (_bin, _input, outputDir) => {
+        await writeFakeMxl(outputDir, denseXml, 'input.mvt1.mxl');
+        await writeFakeMxl(outputDir, mvt2Xml, 'input.mvt2.mxl');
+      },
+    });
+    const res = await request(app)
+      .post('/omr')
+      .attach('file', tinyPng, { filename: 'scan.png', contentType: 'image/png' });
+    expect(res.status).toBe(200);
+    expect(countMusicXmlNotes(res.text)).toBe(3);
+    expect(res.text).toMatch(/number="2"/);
+    expect(res.text).toContain('<step>E</step>');
+  });
+
+  it('picks the denser MusicXML when multiple non-movement scores exist', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'omr-pick-'));
+    writeFileSync(join(dir, 'sparse.musicxml'), sparseXml, 'utf8');
+    writeFileSync(join(dir, 'dense.musicxml'), denseXml, 'utf8');
+    const xml = await findExportedMusicXml(dir);
+    expect(countMusicXmlNotes(xml)).toBe(2);
+    expect(xml).toContain('Dense');
+  });
+
+  it('mergeScorePartwiseDocuments concatenates measures', () => {
+    const merged = mergeScorePartwiseDocuments([denseXml, mvt2Xml]);
+    expect(countMusicXmlNotes(merged)).toBe(3);
+    expect(merged).toMatch(/number="2"/);
   });
 });

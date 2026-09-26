@@ -40,6 +40,11 @@ export AUDIVERIS_BIN="/Applications/Audiveris.app/Contents/MacOS/Audiveris"
 **macOS (Apple Silicon):** download `Audiveris-*-macosx-arm64.dmg` from the [Audiveris releases](https://github.com/Audiveris/audiveris/releases), open the DMG, drag `Audiveris.app` into Applications. On first launch you may need **System Settings → Privacy & Security → Open Anyway**.
 
 `npm run dev:omr` defaults `AUDIVERIS_BIN` to `/Applications/Audiveris.app/Contents/MacOS/Audiveris` when unset.
+
+**OCR languages (optional):** Audiveris may log `No installed OCR languages`. That mainly affects titles/lyrics, not note pitches. Install Tesseract English data if you want text recognition (e.g. `brew install tesseract` on macOS).
+
+**Scan tips:** Prefer a single-page, high-resolution, high-contrast crop. Audiveris sometimes splits one image into multiple movements (`*.mvt1.mxl`, `*.mvt2.mxl`); the sidecar merges those into one MusicXML score.
+
 ## Run
 
 Terminal 1 — web app:

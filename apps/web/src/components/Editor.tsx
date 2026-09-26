@@ -7,7 +7,7 @@ import {
   removeNote,
   updateScoreMeta,
 } from '../lib/score-model';
-import { parseMusicXml } from '../lib/musicxml-parse';
+import { countMusicXmlNoteElements, parseMusicXml } from '../lib/musicxml-parse';
 import { serializeMusicXml } from '../lib/musicxml-serialize';
 import { writeSheetText } from '../lib/file-system';
 import type { OpenMeta } from '../App';
@@ -22,6 +22,13 @@ type Props = {
   onMetaChange: (meta: OpenMeta) => void;
 };
 
+function omrEmptyNotesMessage(xmlNoteCount: number): string {
+  if (xmlNoteCount > 0) {
+    return ` — MusicXML has ${xmlNoteCount} note element(s) but none mapped onto the staff (grace/cue/unsupported shapes may have been skipped). Inspect MusicXML below or edit the staff.`;
+  }
+  return ' — Audiveris exported no notes. Try a clearer, higher-resolution scan of a single page, then inspect MusicXML below or drag notes onto the staff.';
+}
+
 export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
   const [score, setScore] = useState(initialScore);
   const [dirty, setDirty] = useState(false);
@@ -35,6 +42,11 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
   const noteCount = useMemo(
     () => score.measures.reduce((sum, m) => sum + m.notes.length, 0),
     [score],
+  );
+
+  const sourceXmlNoteCount = useMemo(
+    () => (meta.fromOmr && meta.sourceXml ? countMusicXmlNoteElements(meta.sourceXml) : 0),
+    [meta.fromOmr, meta.sourceXml],
   );
 
   const overflowing = useMemo(
@@ -140,9 +152,7 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
       {meta.fromOmr && (
         <p className="status no-print" data-testid="omr-summary">
           OMR import: {score.measures.length} bars, {noteCount} notes
-          {noteCount === 0
-            ? ' — no notes were recognized; inspect MusicXML below and edit or drag notes onto the staff.'
-            : '.'}
+          {noteCount === 0 ? omrEmptyNotesMessage(sourceXmlNoteCount) : '.'}
         </p>
       )}
       {overflowing && (

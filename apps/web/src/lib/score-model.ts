@@ -2,12 +2,25 @@ export type Duration = 'w' | 'h' | 'q' | '8' | '16' | 'wr' | 'hr' | 'qr' | '8r' 
 
 export type Accidental = 'sharp' | 'flat' | 'natural';
 
+/** MusicXML notehead shapes we render (drum “x” heads, etc.). */
+export type Notehead = 'normal' | 'x' | 'diamond' | 'slash' | 'triangle';
+
+export type ChordTone = {
+  pitch: string;
+  octave: number;
+  accidental?: Accidental;
+  notehead?: Notehead;
+};
+
 export type Note = {
   id: string;
   pitch: string;
   octave: number;
   duration: Duration;
   accidental?: Accidental;
+  notehead?: Notehead;
+  /** Extra simultaneous pitches from MusicXML `<chord/>` tones. */
+  chord?: ChordTone[];
 };
 
 export type Measure = {

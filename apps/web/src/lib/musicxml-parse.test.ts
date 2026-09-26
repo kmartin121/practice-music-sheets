@@ -2,7 +2,12 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { MAX_MUSICXML_BYTES, MusicXmlParseError, parseMusicXml } from './musicxml-parse';
+import {
+  countMusicXmlNoteElements,
+  MAX_MUSICXML_BYTES,
+  MusicXmlParseError,
+  parseMusicXml,
+} from './musicxml-parse';
 import { serializeMusicXml } from './musicxml-serialize';
 
 const fixtures = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../fixtures');
@@ -80,6 +85,124 @@ describe('musicxml parse/serialize', () => {
 </score-partwise>`;
     const score = parseMusicXml(xml);
     expect(score.measures[0].notes[0].pitch).toBe('G');
+  });
+
+  it('picks the densest part when multiple parts exist', () => {
+    const xml = readFileSync(resolve(fixtures, 'multi-part-melody.musicxml'), 'utf8');
+    const score = parseMusicXml(xml);
+    expect(score.measures[0].notes.map((n) => `${n.pitch}${n.octave}`)).toEqual([
+      'G4',
+      'A4',
+      'B4',
+      'C5',
+    ]);
+  });
+
+  it('maps unpitched display-step/octave, 32nd to 16th, and dotted quarter toward half', () => {
+    const xml = readFileSync(resolve(fixtures, 'unpitched-notes.musicxml'), 'utf8');
+    const score = parseMusicXml(xml);
+    expect(score.measures[0].notes).toHaveLength(3);
+    expect(score.measures[0].notes[0].pitch).toBe('E');
+    expect(score.measures[0].notes[1].duration).toBe('16');
+    expect(score.measures[0].notes[2].duration).toBe('h');
+  });
+
+  it('keeps chord tones on the first note of a chord group', () => {
+    const xml = readFileSync(resolve(fixtures, 'chord-root-kept.musicxml'), 'utf8');
+    const score = parseMusicXml(xml);
+    expect(score.measures[0].notes.map((n) => n.pitch)).toEqual(['C', 'D']);
+    expect(score.measures[0].notes[0].chord).toEqual([
+      { pitch: 'E', octave: 4 },
+      { pitch: 'G', octave: 4 },
+    ]);
+  });
+
+  it('parses x noteheads on chord tones for drum notation', () => {
+    const xml = `<?xml version="1.0"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Drums</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>4</divisions><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note>
+        <unpitched><display-step>C</display-step><display-octave>5</display-octave></unpitched>
+        <duration>4</duration><type>quarter</type>
+      </note>
+      <note>
+        <chord/>
+        <unpitched><display-step>G</display-step><display-octave>5</display-octave></unpitched>
+        <duration>4</duration><type>quarter</type>
+        <notehead>x</notehead>
+      </note>
+      <note>
+        <unpitched><display-step>F</display-step><display-octave>4</display-octave></unpitched>
+        <duration>4</duration><type>quarter</type>
+      </note>
+    </measure>
+  </part>
+</score-partwise>`;
+    const score = parseMusicXml(xml);
+    expect(score.measures[0].notes[0].pitch).toBe('C');
+    expect(score.measures[0].notes[0].chord).toEqual([
+      { pitch: 'G', octave: 5, notehead: 'x' },
+    ]);
+    const again = parseMusicXml(serializeMusicXml(score));
+    expect(again.measures[0].notes[0].chord?.[0].notehead).toBe('x');
+  });
+
+  it('parses unpitched drum measure with 16ths and a dyad', () => {
+    const xml = `<?xml version="1.0"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Drums</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>4</divisions><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note>
+        <unpitched><display-step>F</display-step><display-octave>4</display-octave></unpitched>
+        <duration>4</duration><type>quarter</type>
+      </note>
+      <note>
+        <unpitched><display-step>C</display-step><display-octave>5</display-octave></unpitched>
+        <duration>1</duration><type>16th</type>
+      </note>
+      <note>
+        <unpitched><display-step>C</display-step><display-octave>5</display-octave></unpitched>
+        <duration>1</duration><type>16th</type>
+      </note>
+      <note>
+        <unpitched><display-step>C</display-step><display-octave>5</display-octave></unpitched>
+        <duration>1</duration><type>16th</type>
+      </note>
+      <note>
+        <unpitched><display-step>C</display-step><display-octave>5</display-octave></unpitched>
+        <duration>1</duration><type>16th</type>
+      </note>
+      <note>
+        <unpitched><display-step>F</display-step><display-octave>4</display-octave></unpitched>
+        <duration>4</duration><type>quarter</type>
+      </note>
+      <note>
+        <chord/>
+        <unpitched><display-step>C</display-step><display-octave>5</display-octave></unpitched>
+        <duration>4</duration><type>quarter</type>
+      </note>
+      <note><rest/><duration>4</duration><type>quarter</type></note>
+    </measure>
+  </part>
+</score-partwise>`;
+    const score = parseMusicXml(xml);
+    const notes = score.measures[0].notes;
+    expect(notes.map((n) => n.duration)).toEqual(['q', '16', '16', '16', '16', 'q', 'qr']);
+    expect(notes[5].pitch).toBe('F');
+    expect(notes[5].chord).toEqual([{ pitch: 'C', octave: 5 }]);
+  });
+
+  it('parses Audiveris-style empty measures without notes', () => {
+    const xml = readFileSync(resolve(fixtures, 'empty-measures-audiveris.musicxml'), 'utf8');
+    const score = parseMusicXml(xml);
+    expect(score.measures).toHaveLength(2);
+    expect(score.measures.every((m) => m.notes.length === 0)).toBe(true);
+    expect(countMusicXmlNoteElements(xml)).toBe(0);
   });
 
   it('rejects empty and oversized input', () => {

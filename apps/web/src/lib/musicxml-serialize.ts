@@ -1,4 +1,4 @@
-import type { Accidental, Duration, Score } from './score-model';
+import type { Accidental, Duration, Notehead, Score } from './score-model';
 import { isRest } from './score-model';
 
 const KEY_NAME_TO_FIFTHS: Record<string, number> = {
@@ -35,6 +35,14 @@ const DURATION_TO_DIVISIONS: Record<string, number> = {
   '16': 1,
 };
 
+const NOTEHEAD_TO_XML: Record<Notehead, string> = {
+  normal: 'normal',
+  x: 'x',
+  diamond: 'diamond',
+  slash: 'slash',
+  triangle: 'triangle',
+};
+
 function escapeXml(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -57,11 +65,15 @@ function noteXml(
   duration: Duration,
   accidental: Accidental | undefined,
   divisions: number,
+  options?: { chord?: boolean; notehead?: Notehead },
 ): string {
   const base = duration.replace(/r$/, '');
   const type = DURATION_TO_TYPE[base] ?? 'quarter';
   const dur = DURATION_TO_DIVISIONS[base] ?? 4;
   const lines: string[] = ['      <note>'];
+  if (options?.chord) {
+    lines.push('        <chord/>');
+  }
   if (isRest(duration)) {
     lines.push('        <rest/>');
   } else {
@@ -78,6 +90,9 @@ function noteXml(
   lines.push(`        <type>${type}</type>`);
   if (accidental && !isRest(duration)) {
     lines.push(`        <accidental>${accidental}</accidental>`);
+  }
+  if (options?.notehead && options.notehead !== 'normal' && !isRest(duration)) {
+    lines.push(`        <notehead>${NOTEHEAD_TO_XML[options.notehead]}</notehead>`);
   }
   lines.push('      </note>');
   void divisions;
@@ -111,7 +126,20 @@ export function serializeMusicXml(score: Score): string {
           : '';
 
       const notes = measure.notes
-        .map((n) => noteXml(n.pitch, n.octave, n.duration, n.accidental, divisions))
+        .map((n) => {
+          const primary = noteXml(n.pitch, n.octave, n.duration, n.accidental, divisions, {
+            notehead: n.notehead,
+          });
+          const chordTones = (n.chord ?? [])
+            .map((tone) =>
+              noteXml(tone.pitch, tone.octave, n.duration, tone.accidental, divisions, {
+                chord: true,
+                notehead: tone.notehead,
+              }),
+            )
+            .join('\n');
+          return chordTones ? `${primary}\n${chordTones}` : primary;
+        })
         .join('\n');
 
       return `    <measure number="${index + 1}">

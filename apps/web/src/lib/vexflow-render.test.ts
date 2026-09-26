@@ -32,4 +32,29 @@ describe('vexflow-render helpers', () => {
     expect(render.measures[0].hidden).toBe(true);
     expect(render.measures[0].notes[0].keys[0]).toBe('g/4');
   });
+
+  it('includes chord tones as extra VexFlow keys', () => {
+    let score = createBlankScore({ measureCount: 1 });
+    score = addNoteToMeasure(score, score.measures[0].id, {
+      pitch: 'F',
+      octave: 4,
+      duration: 'q',
+      chord: [{ pitch: 'C', octave: 5 }],
+    });
+    const render = scoreToRenderInstructions(score);
+    expect(render.measures[0].notes[0].keys).toEqual(['f/4', 'c/5']);
+  });
+
+  it('maps x noteheads into VexFlow key codes', () => {
+    expect(pitchToVexKey('G', 5, undefined, 'x')).toBe('g/5/x');
+    let score = createBlankScore({ measureCount: 1 });
+    score = addNoteToMeasure(score, score.measures[0].id, {
+      pitch: 'C',
+      octave: 5,
+      duration: 'q',
+      chord: [{ pitch: 'G', octave: 5, notehead: 'x' }],
+    });
+    const render = scoreToRenderInstructions(score);
+    expect(render.measures[0].notes[0].keys).toEqual(['c/5', 'g/5/x']);
+  });
 });

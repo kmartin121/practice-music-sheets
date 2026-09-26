@@ -41,4 +41,40 @@ describe('Editor practice + dirty state', () => {
     });
     expect(screen.getByText('Unsaved')).toBeInTheDocument();
   });
+
+  it('diagnoses OMR imports with empty measures vs dropped notes', () => {
+    const emptyScore = createBlankScore({ title: 'Empty', measureCount: 2 });
+    const { rerender } = render(
+      <Editor
+        initialScore={emptyScore}
+        meta={{
+          filename: null,
+          fileHandle: null,
+          dir: null,
+          fromOmr: true,
+          sourceXml: '<score-partwise><part><measure/></part></score-partwise>',
+        }}
+        onBack={() => undefined}
+        onMetaChange={() => undefined}
+      />,
+    );
+    expect(screen.getByTestId('omr-summary')).toHaveTextContent(/Audiveris exported no notes/i);
+
+    rerender(
+      <Editor
+        initialScore={emptyScore}
+        meta={{
+          filename: null,
+          fileHandle: null,
+          dir: null,
+          fromOmr: true,
+          sourceXml:
+            '<score-partwise><part><measure><note><grace/><pitch/></note></measure></part></score-partwise>',
+        }}
+        onBack={() => undefined}
+        onMetaChange={() => undefined}
+      />,
+    );
+    expect(screen.getByTestId('omr-summary')).toHaveTextContent(/none mapped onto the staff/i);
+  });
 });

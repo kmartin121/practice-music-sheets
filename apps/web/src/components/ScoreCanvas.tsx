@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react';
-import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental } from 'vexflow';
+import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Beam } from 'vexflow';
 import type { Score } from '../lib/score-model';
 import { scoreToRenderInstructions, yToPitch } from '../lib/vexflow-render';
 import type { Duration } from '../lib/score-model';
 
 const MEASURE_WIDTH = 220;
 const STAVE_HEIGHT = 120;
+const SYSTEM_GAP = 40;
+const MEASURES_PER_SYSTEM = 4;
 const LINE_SPACING = 10;
 const STAFF_TOP_OFFSET = 40;
 
@@ -44,20 +46,23 @@ export function ScoreCanvas({
     overlay.innerHTML = '';
 
     const instructions = scoreToRenderInstructions(score, hiddenMeasureIds);
-    const width = Math.max(instructions.measures.length * MEASURE_WIDTH + 40, 400);
-    const height = STAVE_HEIGHT + 60;
+    const systemCount = Math.max(1, Math.ceil(instructions.measures.length / MEASURES_PER_SYSTEM));
+    const width = MEASURES_PER_SYSTEM * MEASURE_WIDTH + 40;
+    const height = systemCount * (STAVE_HEIGHT + SYSTEM_GAP) + 40;
 
     const renderer = new Renderer(container, Renderer.Backends.SVG);
     renderer.resize(width, height);
     const context = renderer.getContext();
     context.setFont('Lora, Georgia, serif', 14);
 
-    let x = 20;
-    const y = 20;
-
     instructions.measures.forEach((measure, index) => {
+      const systemIndex = Math.floor(index / MEASURES_PER_SYSTEM);
+      const measureInSystem = index % MEASURES_PER_SYSTEM;
+      const x = 20 + measureInSystem * MEASURE_WIDTH;
+      const y = 20 + systemIndex * (STAVE_HEIGHT + SYSTEM_GAP);
+
       const stave = new Stave(x, y, MEASURE_WIDTH);
-      if (index === 0) {
+      if (measureInSystem === 0) {
         stave.addClef(instructions.clef);
         stave.addKeySignature(instructions.keySignature);
         stave.addTimeSignature(instructions.timeSignature);
@@ -130,6 +135,12 @@ export function ScoreCanvas({
         new Formatter().joinVoices([voice]).format([voice], MEASURE_WIDTH - 20);
         voice.draw(context, stave);
 
+        // Beam consecutive 8ths/16ths so Audiveris-style groups look like the MusicXML.
+        const beams = Beam.generateBeams(vfNotes, {
+          beamRests: false,
+        });
+        beams.forEach((beam) => beam.setContext(context).draw());
+
         vfNotes.forEach((vfNote, i) => {
           const noteId = measure.notes[i]?.id;
           if (!noteId) return;
@@ -143,8 +154,6 @@ export function ScoreCanvas({
           }
         });
       }
-
-      x += MEASURE_WIDTH;
     });
   }, [
     score,

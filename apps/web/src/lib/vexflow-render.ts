@@ -1,4 +1,4 @@
-import type { Duration, Score } from './score-model';
+import type { Duration, Notehead, Score } from './score-model';
 import { isRest } from './score-model';
 
 /** Pure helpers that map Score → VexFlow-friendly render instructions. */
@@ -44,9 +44,25 @@ const ACCIDENTAL_TO_VF: Record<string, string> = {
   natural: 'n',
 };
 
-export function pitchToVexKey(pitch: string, octave: number, accidental?: string): string {
+/** VexFlow per-key notehead codes (appended as pitch/octave/code). */
+const NOTEHEAD_TO_VF: Record<Notehead, string | undefined> = {
+  normal: undefined,
+  x: 'x',
+  diamond: 'd',
+  slash: 's',
+  triangle: 'tu',
+};
+
+export function pitchToVexKey(
+  pitch: string,
+  octave: number,
+  accidental?: string,
+  notehead?: Notehead,
+): string {
   const acc = accidental ? ACCIDENTAL_TO_VF[accidental] ?? '' : '';
-  return `${pitch.toLowerCase()}${acc}/${octave}`;
+  const base = `${pitch.toLowerCase()}${acc}/${octave}`;
+  const code = notehead ? NOTEHEAD_TO_VF[notehead] : undefined;
+  return code ? `${base}/${code}` : base;
 }
 
 export function durationToVex(duration: Duration): string {
@@ -89,7 +105,12 @@ export function scoreToRenderInstructions(
         id: note.id,
         keys: isRest(note.duration)
           ? [score.clef === 'bass' ? 'd/3' : 'b/4']
-          : [pitchToVexKey(note.pitch, note.octave, note.accidental)],
+          : [
+              pitchToVexKey(note.pitch, note.octave, note.accidental, note.notehead),
+              ...(note.chord ?? []).map((tone) =>
+                pitchToVexKey(tone.pitch, tone.octave, tone.accidental, tone.notehead),
+              ),
+            ],
         duration: durationToVex(note.duration),
         accidental: note.accidental ? ACCIDENTAL_TO_VF[note.accidental] : undefined,
         isRest: isRest(note.duration),
