@@ -12,6 +12,19 @@ export type ChordTone = {
   notehead?: Notehead;
 };
 
+/** Ornamental note attached before a principal note (does not consume measure beats). */
+export type GraceTone = {
+  id: string;
+  pitch: string;
+  octave: number;
+  /** Visual duration only (MusicXML `<type>`); not counted in bar capacity. */
+  duration: Duration;
+  accidental?: Accidental;
+  notehead?: Notehead;
+  /** Acciaccatura when true (`<grace slash="yes"/>`); appoggiatura otherwise. */
+  slash?: boolean;
+};
+
 export type Note = {
   id: string;
   pitch: string;
@@ -21,6 +34,8 @@ export type Note = {
   notehead?: Notehead;
   /** Extra simultaneous pitches from MusicXML `<chord/>` tones. */
   chord?: ChordTone[];
+  /** Grace notes sounding immediately before this principal note. */
+  grace?: GraceTone[];
 };
 
 export type Measure = {

@@ -3,12 +3,20 @@ import { isRest } from './score-model';
 
 /** Pure helpers that map Score → VexFlow-friendly render instructions. */
 
+export type RenderGraceNote = {
+  keys: string[];
+  duration: string;
+  accidental?: string;
+  slash?: boolean;
+};
+
 export type RenderNote = {
   id: string;
   keys: string[];
   duration: string;
   accidental?: string;
   isRest: boolean;
+  grace?: RenderGraceNote[];
 };
 
 export type RenderMeasure = {
@@ -125,6 +133,16 @@ export function scoreToRenderInstructions(
         duration: durationToVex(note.duration),
         accidental: note.accidental ? ACCIDENTAL_TO_VF[note.accidental] : undefined,
         isRest: isRest(note.duration),
+        ...(note.grace && note.grace.length > 0
+          ? {
+              grace: note.grace.map((g) => ({
+                keys: [pitchToVexKey(g.pitch, g.octave, g.accidental, g.notehead)],
+                duration: durationToVex(g.duration),
+                accidental: g.accidental ? ACCIDENTAL_TO_VF[g.accidental] : undefined,
+                ...(g.slash ? { slash: true } : {}),
+              })),
+            }
+          : {}),
       })),
     })),
   };

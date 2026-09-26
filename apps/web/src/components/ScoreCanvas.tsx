@@ -3,6 +3,8 @@ import {
   Renderer,
   Stave,
   StaveNote,
+  GraceNote,
+  GraceNoteGroup,
   Voice,
   Formatter,
   Accidental,
@@ -149,6 +151,7 @@ export function ScoreCanvas({
 
     type LaidOutMeasure = {
       measure: (typeof instructions.measures)[number];
+      measureNumber: number;
       systemIndex: number;
       measureInSystem: number;
       x: number;
@@ -172,7 +175,15 @@ export function ScoreCanvas({
           ? 20
           : laidOut[index - 1].x + laidOut[index - 1].staveWidth;
       const y = 20 + systemIndex * (STAVE_HEIGHT + SYSTEM_GAP);
-      laidOut.push({ measure, systemIndex, measureInSystem, x, y, staveWidth });
+      laidOut.push({
+        measure,
+        measureNumber: index,
+        systemIndex,
+        measureInSystem,
+        x,
+        y,
+        staveWidth,
+      });
       maxRight = Math.max(maxRight, x + staveWidth);
     }
 
@@ -239,7 +250,7 @@ export function ScoreCanvas({
     // One beat per beam group (fits 4/4 16th runs of four).
     const beamGroups = [new Fraction(1, 4)];
 
-    laidOut.forEach(({ measure, measureInSystem, x, y, staveWidth }) => {
+    laidOut.forEach(({ measure, measureNumber, measureInSystem, x, y, staveWidth }) => {
       const stave = new Stave(x, y, staveWidth);
       if (measureInSystem === 0) {
         stave.addClef(instructions.clef);
@@ -248,9 +259,18 @@ export function ScoreCanvas({
       }
       stave.setContext(context).draw();
 
+      const numberLabel = document.createElement('div');
+      numberLabel.className = 'measure-number no-print';
+      numberLabel.textContent = String(measureNumber);
+      numberLabel.style.left = `${x}px`;
+      numberLabel.style.top = `${y + STAVE_HEIGHT - 18}px`;
+      numberLabel.style.width = `${staveWidth}px`;
+      overlay.appendChild(numberLabel);
+
       const hit = document.createElement('div');
       hit.className = 'measure-hit';
       hit.dataset.measureId = measure.id;
+      hit.dataset.measureNumber = String(measureNumber);
       hit.style.left = `${x}px`;
       hit.style.top = `${y}px`;
       hit.style.width = `${staveWidth}px`;
@@ -324,6 +344,20 @@ export function ScoreCanvas({
           });
           if (n.accidental && !n.isRest) {
             note.addModifier(new Accidental(n.accidental));
+          }
+          if (n.grace && n.grace.length > 0) {
+            const graceNotes = n.grace.map((g) => {
+              const grace = new GraceNote({
+                keys: g.keys,
+                duration: g.duration,
+                slash: g.slash ?? false,
+              });
+              if (g.accidental) {
+                grace.addModifier(new Accidental(g.accidental));
+              }
+              return grace;
+            });
+            note.addModifier(new GraceNoteGroup(graceNotes).beamNotes());
           }
           if (n.id === selectedNoteId) {
             note.setStyle({ fillStyle: '#c2410c', strokeStyle: '#c2410c' });

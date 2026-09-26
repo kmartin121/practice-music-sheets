@@ -1,4 +1,4 @@
-import type { Accidental, Duration, Notehead, Score } from './score-model';
+import type { Accidental, Duration, GraceTone, Notehead, Score } from './score-model';
 import { isRest } from './score-model';
 
 const KEY_NAME_TO_FIFTHS: Record<string, number> = {
@@ -57,6 +57,30 @@ function alterFor(accidental?: Accidental): number | undefined {
   if (accidental === 'flat') return -1;
   if (accidental === 'natural') return 0;
   return undefined;
+}
+
+function graceNoteXml(grace: GraceTone): string {
+  const base = grace.duration.replace(/r$/, '');
+  const type = DURATION_TO_TYPE[base] ?? '16th';
+  const lines: string[] = ['      <note>'];
+  lines.push(grace.slash ? '        <grace slash="yes"/>' : '        <grace/>');
+  lines.push('        <pitch>');
+  lines.push(`          <step>${escapeXml(grace.pitch)}</step>`);
+  const alter = alterFor(grace.accidental);
+  if (alter !== undefined && alter !== 0) {
+    lines.push(`          <alter>${alter}</alter>`);
+  }
+  lines.push(`          <octave>${grace.octave}</octave>`);
+  lines.push('        </pitch>');
+  lines.push(`        <type>${type}</type>`);
+  if (grace.accidental) {
+    lines.push(`        <accidental>${grace.accidental}</accidental>`);
+  }
+  if (grace.notehead && grace.notehead !== 'normal') {
+    lines.push(`        <notehead>${NOTEHEAD_TO_XML[grace.notehead]}</notehead>`);
+  }
+  lines.push('      </note>');
+  return lines.join('\n');
 }
 
 function noteXml(
@@ -127,6 +151,7 @@ export function serializeMusicXml(score: Score): string {
 
       const notes = measure.notes
         .map((n) => {
+          const graceBlock = (n.grace ?? []).map((g) => graceNoteXml(g)).join('\n');
           const primary = noteXml(n.pitch, n.octave, n.duration, n.accidental, divisions, {
             notehead: n.notehead,
           });
@@ -138,7 +163,8 @@ export function serializeMusicXml(score: Score): string {
               }),
             )
             .join('\n');
-          return chordTones ? `${primary}\n${chordTones}` : primary;
+          const principal = chordTones ? `${primary}\n${chordTones}` : primary;
+          return graceBlock ? `${graceBlock}\n${principal}` : principal;
         })
         .join('\n');
 

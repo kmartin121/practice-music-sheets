@@ -45,6 +45,8 @@ export AUDIVERIS_BIN="/Applications/Audiveris.app/Contents/MacOS/Audiveris"
 
 **Scan tips:** Prefer a single-page, high-resolution, high-contrast crop. Audiveris sometimes splits one image into multiple movements (`*.mvt1.mxl`, `*.mvt2.mxl`); the sidecar merges those into one MusicXML score.
 
+**Grace notes / drum X-heads:** The sidecar enables Audiveris book switches `smallHeads`, `crossHeads`, and `drumNotation` in batch mode. Without `smallHeads`, Audiveris skips the CUE_BEAMS step and usually omits grace/acciaccatura notes from MusicXML. Even with the switch on, poor scan quality can still miss tiny heads—review the MusicXML panel if a flam or crushed note is absent.
+
 ## Run
 
 Terminal 1 — web app:

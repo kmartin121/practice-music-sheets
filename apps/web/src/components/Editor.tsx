@@ -27,9 +27,9 @@ type Props = {
 
 function omrEmptyNotesMessage(xmlNoteCount: number): string {
   if (xmlNoteCount > 0) {
-    return ` — MusicXML has ${xmlNoteCount} note element(s) but none mapped onto the staff (grace/cue/unsupported shapes may have been skipped). Inspect MusicXML below or edit the staff.`;
+    return ` — MusicXML has ${xmlNoteCount} note element(s) but none mapped onto the staff (cue notes or unsupported shapes may have been skipped). Inspect MusicXML below or edit the staff.`;
   }
-  return ' — Audiveris exported no notes. Try a clearer, higher-resolution scan of a single page, then inspect MusicXML below or drag notes onto the staff.';
+  return ' — Audiveris exported no notes. Try a clearer, higher-resolution scan of a single page (grace notes need Audiveris “small heads”), then inspect MusicXML below or drag notes onto the staff.';
 }
 
 export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {

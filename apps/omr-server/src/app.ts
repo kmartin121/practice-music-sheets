@@ -105,13 +105,34 @@ export function summarizeAudiverisFailure(log: string, exitCode: number | null):
   return `Audiveris exited with code ${exitCode ?? 'unknown'}`;
 }
 
+/**
+ * Book processing switches that are off by default in Audiveris.
+ * Without smallHeads, CUE_BEAMS is skipped and grace/acciaccatura notes are never recognized.
+ * crossHeads + drumNotation matter for percussion X-heads / unpitched staves.
+ */
+export const AUDIVERIS_BATCH_CONSTANTS = [
+  'org.audiveris.omr.sheet.ProcessingSwitches.smallHeads=true',
+  'org.audiveris.omr.sheet.ProcessingSwitches.crossHeads=true',
+  'org.audiveris.omr.sheet.ProcessingSwitches.drumNotation=true',
+] as const;
+
+/** CLI argv after the Audiveris binary (batch export with grace/drum switches). */
+export function buildAudiverisArgs(inputPath: string, outputDir: string): string[] {
+  const args: string[] = ['-batch'];
+  for (const value of AUDIVERIS_BATCH_CONSTANTS) {
+    args.push('-constant', value);
+  }
+  args.push('-export', '-output', outputDir, inputPath);
+  return args;
+}
+
 export async function defaultRunAudiveris(
   bin: string,
   inputPath: string,
   outputDir: string,
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(bin, ['-batch', '-export', '-output', outputDir, inputPath], {
+    const child = spawn(bin, buildAudiverisArgs(inputPath, outputDir), {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     // Audiveris writes almost all diagnostics to stdout, not stderr.

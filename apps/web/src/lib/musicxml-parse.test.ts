@@ -259,6 +259,48 @@ describe('musicxml parse/serialize', () => {
     expect(score.measures[0].width).toBe(278);
   });
 
+  it('parses acciaccatura grace notes with x noteheads onto the following principal', () => {
+    const xml = `<?xml version="1.0"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Drums</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>4</divisions><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note>
+        <grace slash="yes"/>
+        <unpitched><display-step>G</display-step><display-octave>5</display-octave></unpitched>
+        <type>16th</type>
+        <notehead>x</notehead>
+      </note>
+      <note>
+        <unpitched><display-step>C</display-step><display-octave>5</display-octave></unpitched>
+        <duration>4</duration><type>quarter</type>
+      </note>
+      <note>
+        <unpitched><display-step>F</display-step><display-octave>4</display-octave></unpitched>
+        <duration>4</duration><type>quarter</type>
+      </note>
+    </measure>
+  </part>
+</score-partwise>`;
+    const score = parseMusicXml(xml);
+    expect(score.measures[0].notes).toHaveLength(2);
+    expect(score.measures[0].notes[0].pitch).toBe('C');
+    expect(score.measures[0].notes[0].grace).toEqual([
+      expect.objectContaining({
+        pitch: 'G',
+        octave: 5,
+        duration: '16',
+        notehead: 'x',
+        slash: true,
+      }),
+    ]);
+    const again = parseMusicXml(serializeMusicXml(score));
+    expect(again.measures[0].notes[0].grace?.[0]).toEqual(
+      expect.objectContaining({ pitch: 'G', octave: 5, notehead: 'x', slash: true }),
+    );
+  });
+
   it('rejects empty and oversized input', () => {
     expect(() => parseMusicXml('')).toThrow(/empty/i);
     const huge = `<score-partwise>${'a'.repeat(MAX_MUSICXML_BYTES)}</score-partwise>`;

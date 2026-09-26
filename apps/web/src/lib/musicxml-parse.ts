@@ -5,6 +5,7 @@ import {
   isRest,
   type Accidental,
   type Duration,
+  type GraceTone,
   type Measure,
   type Note,
   type Notehead,
@@ -165,9 +166,32 @@ function resolvePitch(noteNode: Record<string, unknown>): { step: string; octave
   return null;
 }
 
+function parseGraceSlash(graceNode: unknown): boolean {
+  if (graceNode == null || typeof graceNode !== 'object') return false;
+  const attrs = graceNode as Record<string, unknown>;
+  const slash = textOf(attrs['@_slash'] ?? attrs.slash).toLowerCase();
+  return slash === 'yes' || slash === 'true' || slash === '1';
+}
+
+function parseGraceTone(noteNode: Record<string, unknown>, divisions: number): GraceTone | null {
+  if (noteNode.rest != null) return null;
+  const pitch = resolvePitch(noteNode);
+  if (!pitch) return null;
+  const notehead = parseNotehead(noteNode);
+  return {
+    id: createId('grace'),
+    pitch: pitch.step,
+    octave: pitch.octave,
+    duration: parseDuration(noteNode, false, divisions),
+    accidental: parseAccidental(noteNode),
+    ...(notehead ? { notehead } : {}),
+    ...(parseGraceSlash(noteNode.grace) ? { slash: true } : {}),
+  };
+}
+
 function parseNote(noteNode: Record<string, unknown>, divisions: number): Note | null {
-  // Skip grace / cue notes for v1 melody line.
-  if (noteNode.grace != null || noteNode.cue != null) return null;
+  // Cue notes stay out of the editable melody line; grace notes are attached separately.
+  if (noteNode.cue != null) return null;
   const isRestNote = noteNode.rest != null;
   const duration = parseDuration(noteNode, isRestNote, divisions);
   if (isRestNote) {
@@ -258,6 +282,7 @@ export function parseMeasureBodyInOrder(
 ): { notes: Note[]; defaultXs: (number | null)[] } {
   const notes: Note[] = [];
   const defaultXs: (number | null)[] = [];
+  let pendingGrace: GraceTone[] = [];
   const chunkParser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: '@_',
@@ -291,8 +316,16 @@ export function parseMeasureBodyInOrder(
     const noteNode = parsed.note as Record<string, unknown> | undefined;
     if (!noteNode) continue;
 
+    // Cue notes are skipped; grace notes buffer until the next principal note.
+    if (noteNode.cue != null) continue;
+    if (noteNode.grace != null) {
+      if (noteNode.chord != null) continue;
+      const grace = parseGraceTone(noteNode, divisions);
+      if (grace) pendingGrace.push(grace);
+      continue;
+    }
+
     if (noteNode.chord != null) {
-      if (noteNode.grace != null || noteNode.cue != null) continue;
       const pitch = resolvePitch(noteNode);
       if (!pitch || notes.length === 0) continue;
       const prev = notes[notes.length - 1];
@@ -310,6 +343,10 @@ export function parseMeasureBodyInOrder(
 
     const note = parseNote(noteNode, divisions);
     if (note) {
+      if (pendingGrace.length > 0) {
+        note.grace = pendingGrace;
+        pendingGrace = [];
+      }
       notes.push(note);
       defaultXs.push(readDefaultX(noteNode));
     }
@@ -332,7 +369,7 @@ function countParsableNotes(part: Record<string, unknown>): number {
   for (const measureNode of asArray(part.measure as Record<string, unknown> | Record<string, unknown>[])) {
     for (const noteNode of asArray(measureNode.note as Record<string, unknown> | Record<string, unknown>[])) {
       // Chord tones attach to the previous note; still count toward density.
-      if (noteNode.grace != null || noteNode.cue != null) continue;
+      if (noteNode.cue != null) continue;
       if (noteNode.rest != null || resolvePitch(noteNode)) count += 1;
     }
   }
@@ -467,11 +504,18 @@ export function parseMusicXml(xml: string): Score {
       // Fallback if measure regex missed (malformed whitespace, etc.).
       const collected: Note[] = [];
       const defaultXs: (number | null)[] = [];
+      let pendingGrace: GraceTone[] = [];
       for (const noteNode of asArray(
         measureNode.note as Record<string, unknown> | Record<string, unknown>[],
       )) {
+        if (noteNode.cue != null) continue;
+        if (noteNode.grace != null) {
+          if (noteNode.chord != null) continue;
+          const grace = parseGraceTone(noteNode, divisions);
+          if (grace) pendingGrace.push(grace);
+          continue;
+        }
         if (noteNode.chord != null) {
-          if (noteNode.grace != null || noteNode.cue != null) continue;
           const pitch = resolvePitch(noteNode);
           if (!pitch || collected.length === 0) continue;
           const prev = collected[collected.length - 1];
@@ -488,6 +532,10 @@ export function parseMusicXml(xml: string): Score {
         }
         const note = parseNote(noteNode, divisions);
         if (note) {
+          if (pendingGrace.length > 0) {
+            note.grace = pendingGrace;
+            pendingGrace = [];
+          }
           collected.push(note);
           defaultXs.push(readDefaultX(noteNode));
         }

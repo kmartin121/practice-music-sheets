@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addNoteToMeasure,
   createBlankScore,
+  measureFilledBeats,
   measureOverflows,
   reflowOverflow,
   relocateNote,
@@ -89,6 +90,33 @@ describe('score-model', () => {
     expect(score.measures).toHaveLength(2);
     expect(score.measures[0].notes).toHaveLength(4);
     expect(score.measures[1].notes).toHaveLength(1);
+    expect(measureOverflows(score, score.measures[0])).toBe(false);
+  });
+
+  it('does not count grace notes toward measure capacity', () => {
+    let score = createBlankScore({
+      measureCount: 1,
+      timeSignature: { beats: 4, beatType: 4 },
+    });
+    const measureId = score.measures[0].id;
+    for (let i = 0; i < 4; i += 1) {
+      score = addNoteToMeasure(score, measureId, {
+        pitch: 'C',
+        octave: 5,
+        duration: 'q',
+        grace: [
+          {
+            id: `grace-${i}`,
+            pitch: 'G',
+            octave: 5,
+            duration: '16',
+            notehead: 'x',
+            slash: true,
+          },
+        ],
+      });
+    }
+    expect(measureFilledBeats(score.measures[0])).toBe(4);
     expect(measureOverflows(score, score.measures[0])).toBe(false);
   });
 });

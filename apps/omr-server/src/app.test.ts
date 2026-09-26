@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  buildAudiverisArgs,
   countMusicXmlNotes,
   createApp,
   findExportedMusicXml,
@@ -222,5 +223,18 @@ WARN  [sheet]                 SheetStub 411  | sheet Too few staff filaments: 0 
 INFO  [sheet]                 SheetStub 1194 | Sheet sheet flagged as invalid.
 WARN  []                      Main 307  | Exit forced. Failure`;
     expect(summarizeAudiverisFailure(log, 1)).toMatch(/does not seem to contain staff lines/i);
+  });
+
+  it('buildAudiverisArgs enables smallHeads, crossHeads, and drumNotation', () => {
+    const args = buildAudiverisArgs('/tmp/in.png', '/tmp/out');
+    expect(args[0]).toBe('-batch');
+    expect(args).toContain('-constant');
+    expect(args).toContain('org.audiveris.omr.sheet.ProcessingSwitches.smallHeads=true');
+    expect(args).toContain('org.audiveris.omr.sheet.ProcessingSwitches.crossHeads=true');
+    expect(args).toContain('org.audiveris.omr.sheet.ProcessingSwitches.drumNotation=true');
+    expect(args.at(-4)).toBe('-export');
+    expect(args.at(-3)).toBe('-output');
+    expect(args.at(-2)).toBe('/tmp/out');
+    expect(args.at(-1)).toBe('/tmp/in.png');
   });
 });

@@ -69,7 +69,7 @@ describe('Editor practice + dirty state', () => {
           dir: null,
           fromOmr: true,
           sourceXml:
-            '<score-partwise><part><measure><note><grace/><pitch/></note></measure></part></score-partwise>',
+            '<score-partwise><part><measure><note><cue/><pitch><step>C</step><octave>4</octave></pitch></note></measure></part></score-partwise>',
         }}
         onBack={() => undefined}
         onMetaChange={() => undefined}

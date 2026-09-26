@@ -63,4 +63,27 @@ describe('vexflow-render helpers', () => {
     const render = scoreToRenderInstructions(score);
     expect(render.measures[0].notes[0].keys).toEqual(['c/5', 'g/5/x']);
   });
+
+  it('maps grace notes (acciaccatura slash + x head) onto the principal render note', () => {
+    let score = createBlankScore({ measureCount: 1 });
+    score = addNoteToMeasure(score, score.measures[0].id, {
+      pitch: 'C',
+      octave: 5,
+      duration: 'q',
+      grace: [
+        {
+          id: 'grace-1',
+          pitch: 'G',
+          octave: 5,
+          duration: '16',
+          notehead: 'x',
+          slash: true,
+        },
+      ],
+    });
+    const render = scoreToRenderInstructions(score);
+    expect(render.measures[0].notes[0].grace).toEqual([
+      { keys: ['g/5/x'], duration: '16', slash: true },
+    ]);
+  });
 });

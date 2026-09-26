@@ -293,6 +293,18 @@
   pointer-events: none;
 }
 
+.measure-number {
+  position: absolute;
+  text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--muted);
+  pointer-events: none;
+  user-select: none;
+}
+
 .measure-hit {
   position: absolute;
   pointer-events: none;
