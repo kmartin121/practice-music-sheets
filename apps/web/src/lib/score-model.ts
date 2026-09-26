@@ -223,6 +223,37 @@ export function reflowOverflow(score: Score): Score {
   return { ...score, measures };
 }
 
+/**
+ * Cut one overfull measure into consecutive bars of at most `capacity` beats,
+ * without disturbing neighboring measures (unlike `reflowOverflow`).
+ * Notes that would straddle a barline start the next bar.
+ */
+export function splitOverfullMeasure(measure: Measure, capacity: number): Measure[] {
+  const total = measureFilledBeats(measure);
+  if (capacity <= 0 || total <= capacity + 1e-9) return [measure];
+
+  const pieces: Note[][] = [[]];
+  let filled = 0;
+  for (const note of measure.notes) {
+    const beats = noteBeats(note);
+    if (filled > 1e-9 && filled + beats > capacity + 1e-9) {
+      pieces.push([]);
+      filled = 0;
+    }
+    pieces[pieces.length - 1].push(note);
+    filled += beats;
+  }
+
+  return pieces.map((notes, i) => {
+    const pieceBeats = notes.reduce((sum, note) => sum + noteBeats(note), 0);
+    return {
+      id: i === 0 ? measure.id : createId('measure'),
+      notes,
+      ...(measure.width ? { width: Math.round((measure.width * pieceBeats) / total) } : {}),
+    };
+  });
+}
+
 export function removeNote(score: Score, noteId: string): Score {
   return {
     ...score,

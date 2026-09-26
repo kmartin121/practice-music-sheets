@@ -3,6 +3,7 @@ import {
   createId,
   isRest,
   noteBeats,
+  splitOverfullMeasure,
   type Accidental,
   type Duration,
   type GraceTone,
@@ -720,14 +721,16 @@ export function parseMusicXml(xml: string): Score {
       notes = fillImpliedRestsFromSpacing(collected, defaultXs, capacityBeats);
     }
 
-    measures.push({
+    const measure: Measure = {
       id: createId('measure'),
       notes,
       ...(Number.isFinite(Number(textOf(measureNode['@_width']))) &&
       Number(textOf(measureNode['@_width'])) > 0
         ? { width: Number(textOf(measureNode['@_width'])) }
         : {}),
-    });
+    };
+    // OMR misses barlines (repeats, tempo marks), packing several printed bars into one measure.
+    measures.push(...splitOverfullMeasure(measure, capacityBeats));
   }
 
   if (measures.length === 0) {

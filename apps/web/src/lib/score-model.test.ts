@@ -11,12 +11,28 @@ import {
   reflowOverflow,
   relocateNote,
   removeNote,
+  splitOverfullMeasure,
 } from './score-model';
 
 describe('score-model', () => {
   it('counts a dotted half rest as three beats', () => {
     expect(durationBeats('hdr')).toBe(3);
     expect(durationBeats('hd')).toBe(3);
+  });
+
+  it('splits an overfull measure locally, moving a straddling note to the next bar', () => {
+    const measure = {
+      id: 'm1',
+      notes: [
+        { id: 'a', pitch: 'C', octave: 4, duration: 'hd' as const },
+        { id: 'b', pitch: 'D', octave: 4, duration: 'h' as const },
+        { id: 'c', pitch: 'E', octave: 4, duration: 'q' as const },
+      ],
+    };
+    const pieces = splitOverfullMeasure(measure, 4);
+    expect(pieces.map((p) => p.notes.map((n) => n.id))).toEqual([['a'], ['b', 'c']]);
+    expect(pieces[0].id).toBe('m1');
+    expect(splitOverfullMeasure({ id: 'x', notes: measure.notes.slice(0, 1) }, 4)).toHaveLength(1);
   });
 
   it('scales tuplet notes to their sounding length', () => {

@@ -471,6 +471,24 @@ describe('musicxml parse/serialize', () => {
     ]);
   });
 
+  it('splits a measure that packs several printed bars into separate bars', () => {
+    const bar = [
+      drumNote('F', 4, 8, 'quarter'),
+      drumNote('E', 5, 8, 'quarter'),
+      drumNote('F', 4, 8, 'quarter'),
+      drumNote('E', 5, 8, 'quarter'),
+    ].join('');
+    const xml = drumDoc(bar + bar + bar, bar).replace(
+      '<measure number="1">',
+      '<measure number="1" width="900">',
+    );
+    const score = parseMusicXml(xml);
+    expect(score.measures).toHaveLength(4);
+    expect(score.measures.every((m) => measureFilledBeats(m) === 4)).toBe(true);
+    expect(score.measures.slice(0, 3).map((m) => m.width)).toEqual([300, 300, 300]);
+    expect(new Set(score.measures.map((m) => m.id)).size).toBe(4);
+  });
+
   it('rejects empty and oversized input', () => {
     expect(() => parseMusicXml('')).toThrow(/empty/i);
     const huge = `<score-partwise>${'a'.repeat(MAX_MUSICXML_BYTES)}</score-partwise>`;
