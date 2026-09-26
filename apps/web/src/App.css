@@ -404,6 +404,14 @@
   user-select: none;
 }
 
+.measure-number.is-short {
+  color: #b45309;
+}
+
+.measure-number.is-over {
+  color: var(--error);
+}
+
 .measure-hit {
   position: absolute;
   pointer-events: none;

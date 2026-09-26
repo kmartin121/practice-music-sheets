@@ -162,6 +162,16 @@ export function measureOverflows(score: Score, measure: Measure): boolean {
   return measureFilledBeats(measure) > measureBeatCapacity(score) + 1e-9;
 }
 
+export type MeasureBeatStatus = 'empty' | 'short' | 'full' | 'over';
+
+export function measureBeatStatus(score: Score, measure: Measure): MeasureBeatStatus {
+  if (measure.notes.length === 0) return 'empty';
+  const diff = measureFilledBeats(measure) - measureBeatCapacity(score);
+  if (diff > 1e-6) return 'over';
+  if (diff < -1e-6) return 'short';
+  return 'full';
+}
+
 export function addNoteToMeasure(
   score: Score,
   measureId: string,

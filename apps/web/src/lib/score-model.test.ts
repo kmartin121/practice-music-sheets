@@ -4,6 +4,7 @@ import {
   copyNote,
   createBlankScore,
   durationBeats,
+  measureBeatStatus,
   measureFilledBeats,
   measureOverflows,
   mergeScores,
@@ -38,6 +39,34 @@ describe('score-model', () => {
   it('scales tuplet notes to their sounding length', () => {
     expect(noteBeats({ duration: '8', tuplet: { actual: 3, normal: 2 } })).toBeCloseTo(1 / 3);
     expect(noteBeats({ duration: 'q' })).toBe(1);
+  });
+
+  it('reports whether a measure meets its beat count', () => {
+    const score = createBlankScore({ timeSignature: { beats: 3, beatType: 4 } });
+    const note = (id: string, duration: 'h' | 'q' | '8') => ({
+      id,
+      pitch: 'C',
+      octave: 4,
+      duration,
+    });
+    const tripletEighth = (id: string) => ({
+      ...note(id, '8'),
+      tuplet: { actual: 3, normal: 2 },
+    });
+    expect(measureBeatStatus(score, { id: 'e', notes: [] })).toBe('empty');
+    expect(measureBeatStatus(score, { id: 's', notes: [note('a', 'h')] })).toBe('short');
+    expect(measureBeatStatus(score, { id: 'f', notes: [note('a', 'h'), note('b', 'q')] })).toBe(
+      'full',
+    );
+    expect(
+      measureBeatStatus(score, {
+        id: 't',
+        notes: [note('a', 'h'), tripletEighth('b'), tripletEighth('c'), tripletEighth('d')],
+      }),
+    ).toBe('full');
+    expect(
+      measureBeatStatus(score, { id: 'o', notes: [note('a', 'h'), note('b', 'h')] }),
+    ).toBe('over');
   });
 
   it('creates a blank sheet with empty measures', () => {

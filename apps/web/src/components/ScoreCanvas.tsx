@@ -16,16 +16,23 @@ import {
 } from 'vexflow';
 import type { Score } from '../lib/score-model';
 import { scoreToRenderInstructions, snapStaffY, yToPitch } from '../lib/vexflow-render';
+import type { RenderMeasure, RenderScore } from '../lib/vexflow-render';
 import type { Duration } from '../lib/score-model';
+import { measureBeatStatus } from '../lib/score-model';
 
-const MEASURE_WIDTH = 220;
-const SYSTEM_START_EXTRA = 80; // clef + key + time on the first bar of each system
+const EMPTY_MEASURE_WIDTH = 120;
+const DEFAULT_SYSTEM_START_EXTRA = 80;
 const STAVE_HEIGHT = 120;
 const SYSTEM_GAP = 40;
 const MEASURES_PER_SYSTEM = 4;
 const LINE_SPACING = 10;
 const STAFF_TOP_OFFSET = 40;
-const NOTE_SLOT_PX = 28;
+const MEASURE_PADDING_PX = 26;
+const ACCIDENTAL_ALLOWANCE_PX = 10;
+const GRACE_ALLOWANCE_PX = 12;
+const UNBEAMED_PADDING_PX = 10;
+const THIRTY_SECOND_SLOT_PX = 16;
+const SLOT_STEP_PX = 4;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const HIDDEN_HATCH_ID = 'hidden-measure-hatch';
 
@@ -103,31 +110,133 @@ function insertSlotFromX(
   return best;
 }
 
-function measureBaseWidth(noteCount: number, engravingWidth: number | undefined): number {
-  const fromContent = Math.max(MEASURE_WIDTH, 48 + noteCount * NOTE_SLOT_PX);
-  const fromXml = engravingWidth && engravingWidth > 0 ? engravingWidth : 0;
-  return Math.max(fromContent, fromXml);
+const VEX_BASE_BEATS: Record<string, number> = {
+  w: 4,
+  h: 2,
+  q: 1,
+  '8': 0.5,
+  '16': 0.25,
+  '32': 0.125,
+};
+
+/**
+ * Horizontal space for one note: 32nd = 16px, and each doubling of note value
+ * adds 4px (16th 20, 8th 24, quarter 28, half 32, whole 36).
+ */
+export function noteSlotWidth(vexDuration: string): number {
+  const bare = vexDuration.replace(/r$/, '');
+  const dots = /d*$/.exec(bare)?.[0].length ?? 0;
+  const base = VEX_BASE_BEATS[bare.slice(0, bare.length - dots)] ?? 1;
+  const beats = base * (2 - 0.5 ** dots);
+  const doublings = Math.max(0, Math.log2(beats / VEX_BASE_BEATS['32']));
+  return THIRTY_SECOND_SLOT_PX + SLOT_STEP_PX * doublings;
+}
+
+type SizedNote = {
+  duration: string;
+  accidental?: string;
+  grace?: ReadonlyArray<unknown>;
+  beamed?: boolean;
+};
+
+function measureBaseWidth(notes: ReadonlyArray<SizedNote>): number {
+  if (notes.length === 0) return EMPTY_MEASURE_WIDTH;
+  const content = notes.reduce(
+    (sum, n) =>
+      sum +
+      noteSlotWidth(n.duration) +
+      (n.beamed ? 0 : UNBEAMED_PADDING_PX) +
+      (n.accidental ? ACCIDENTAL_ALLOWANCE_PX : 0) +
+      (n.grace?.length ?? 0) * GRACE_ALLOWANCE_PX,
+    0,
+  );
+  return MEASURE_PADDING_PX + content;
 }
 
 /**
  * Column widths shared across systems so barlines line up vertically.
  * Each column uses the max content width of that slot on any system;
- * the first column also gets clef/key/time padding.
+ * the first column also gets room for the clef/key/time signature.
  */
 export function columnStaveWidths(
-  measures: ReadonlyArray<{ notes: { length: number }; width?: number }>,
+  measures: ReadonlyArray<{ notes: ReadonlyArray<SizedNote> }>,
   measuresPerSystem = MEASURES_PER_SYSTEM,
+  systemStartExtra = DEFAULT_SYSTEM_START_EXTRA,
 ): number[] {
-  const columnBase = Array.from({ length: measuresPerSystem }, () => MEASURE_WIDTH);
+  const columnBase = Array.from({ length: measuresPerSystem }, () => 0);
   for (let index = 0; index < measures.length; index += 1) {
     const col = index % measuresPerSystem;
-    const measure = measures[index];
-    columnBase[col] = Math.max(
-      columnBase[col],
-      measureBaseWidth(measure.notes.length, measure.width),
-    );
+    columnBase[col] = Math.max(columnBase[col], measureBaseWidth(measures[index].notes));
   }
-  return columnBase.map((base, col) => (col === 0 ? base + SYSTEM_START_EXTRA : base));
+  return columnBase.map((base, col) => {
+    const width = base || EMPTY_MEASURE_WIDTH;
+    return col === 0 ? width + systemStartExtra : width;
+  });
+}
+
+type BuiltMeasure = { vfNotes: StaveNote[]; tuplets: Tuplet[]; beams: Beam[] };
+
+function buildMeasureNotes(
+  measure: RenderMeasure,
+  clef: RenderScore['clef'],
+  selectedNoteId: string | null,
+): BuiltMeasure {
+  const vfNotes = measure.notes.map((n) => {
+    const note = new StaveNote({ keys: n.keys, duration: n.duration, clef, autoStem: true });
+    if (n.accidental && !n.isRest) {
+      note.addModifier(new Accidental(n.accidental));
+    }
+    if (n.dots && n.dots > 0) {
+      for (let d = 0; d < n.dots; d += 1) {
+        Dot.buildAndAttach([note], { all: true });
+      }
+    }
+    if (n.grace && n.grace.length > 0) {
+      const graceNotes = n.grace.map((g) => {
+        const grace = new GraceNote({ keys: g.keys, duration: g.duration, slash: g.slash ?? false });
+        if (g.accidental) {
+          grace.addModifier(new Accidental(g.accidental));
+        }
+        return grace;
+      });
+      note.addModifier(new GraceNoteGroup(graceNotes).beamNotes());
+    }
+    if (n.id === selectedNoteId) {
+      note.setStyle({ fillStyle: '#c2410c', strokeStyle: '#c2410c' });
+    }
+    note.setAttribute('id', n.id);
+    return note;
+  });
+
+  // Tuplets rescale note ticks, so they must exist before beaming and formatting.
+  const tuplets = measure.tuplets.map(
+    (group) =>
+      new Tuplet(vfNotes.slice(group.start, group.end + 1), {
+        numNotes: group.actual,
+        notesOccupied: group.normal,
+        bracketed: true,
+      }),
+  );
+
+  // Beams must be created before format/draw so flags are suppressed.
+  // One beat per beam group (fits 4/4 16th runs of four).
+  const beams = Beam.generateBeams(vfNotes, {
+    beamRests: false,
+    stemDirection: Stem.UP,
+    groups: [new Fraction(1, 4)],
+  });
+
+  return { vfNotes, tuplets, beams };
+}
+
+/** Width the clef, key and time signature add ahead of the first note. */
+function systemStartExtra(clef: string, keySignature: string, timeSignature: string): number {
+  const plain = new Stave(0, 0, 500);
+  const decorated = new Stave(0, 0, 500)
+    .addClef(clef)
+    .addKeySignature(keySignature)
+    .addTimeSignature(timeSignature);
+  return Math.max(0, decorated.getNoteStartX() - plain.getNoteStartX());
 }
 
 function ensureHiddenMeasureDefs(svg: SVGSVGElement): void {
@@ -252,9 +361,24 @@ export function ScoreCanvas({
       staveWidth: number;
     };
 
+    const builtMeasures = instructions.measures.map((measure) =>
+      measure.notes.length > 0
+        ? buildMeasureNotes(measure, instructions.clef, selectedNoteId)
+        : null,
+    );
+
     const laidOut: LaidOutMeasure[] = [];
     let maxRight = 40;
-    const staveWidths = columnStaveWidths(instructions.measures);
+    const staveWidths = columnStaveWidths(
+      instructions.measures.map((measure, index) => ({
+        notes: measure.notes.map((note, i) => ({
+          ...note,
+          beamed: builtMeasures[index]?.vfNotes[i].hasBeam() ?? false,
+        })),
+      })),
+      MEASURES_PER_SYSTEM,
+      systemStartExtra(instructions.clef, instructions.keySignature, instructions.timeSignature),
+    );
     for (let index = 0; index < instructions.measures.length; index += 1) {
       const measure = instructions.measures[index];
       const systemIndex = Math.floor(index / MEASURES_PER_SYSTEM);
@@ -338,9 +462,6 @@ export function ScoreCanvas({
       return { pitch, octave, index: slot.index };
     };
 
-    // One beat per beam group (fits 4/4 16th runs of four).
-    const beamGroups = [new Fraction(1, 4)];
-
     laidOut.forEach(({ measure, measureNumber, measureInSystem, x, y, staveWidth }) => {
       const stave = new Stave(x, y, staveWidth);
       if (measureInSystem === 0) {
@@ -357,6 +478,10 @@ export function ScoreCanvas({
       if (showMeasureNumbers) {
         const numberLabel = document.createElement('div');
         numberLabel.className = 'measure-number no-print';
+        const beatStatus = measureBeatStatus(score, score.measures[measureNumber]);
+        if (beatStatus === 'short' || beatStatus === 'over') {
+          numberLabel.classList.add(`is-${beatStatus}`);
+        }
         numberLabel.textContent = String(measureNumber);
         numberLabel.style.left = `${x}px`;
         numberLabel.style.top = `${y + STAVE_HEIGHT - 18}px`;
@@ -431,68 +556,30 @@ export function ScoreCanvas({
       });
       overlay.appendChild(hit);
 
-      if (!measure.hidden && measure.notes.length > 0) {
-        const vfNotes = measure.notes.map((n) => {
-          const note = new StaveNote({
-            keys: n.keys,
-            duration: n.duration,
-            clef: instructions.clef,
-            autoStem: true,
-          });
-          if (n.accidental && !n.isRest) {
-            note.addModifier(new Accidental(n.accidental));
-          }
-          if (n.dots && n.dots > 0) {
-            for (let d = 0; d < n.dots; d += 1) {
-              Dot.buildAndAttach([note], { all: true });
-            }
-          }
-          if (n.grace && n.grace.length > 0) {
-            const graceNotes = n.grace.map((g) => {
-              const grace = new GraceNote({
-                keys: g.keys,
-                duration: g.duration,
-                slash: g.slash ?? false,
-              });
-              if (g.accidental) {
-                grace.addModifier(new Accidental(g.accidental));
-              }
-              return grace;
-            });
-            note.addModifier(new GraceNoteGroup(graceNotes).beamNotes());
-          }
-          if (n.id === selectedNoteId) {
-            note.setStyle({ fillStyle: '#c2410c', strokeStyle: '#c2410c' });
-          }
-          note.setAttribute('id', n.id);
-          return note;
-        });
-
-        // Tuplets rescale note ticks, so they must exist before beaming and formatting.
-        const tuplets = measure.tuplets.map(
-          (group) =>
-            new Tuplet(vfNotes.slice(group.start, group.end + 1), {
-              numNotes: group.actual,
-              notesOccupied: group.normal,
-              bracketed: true,
-            }),
-        );
-
-        // Beams must be created before format/draw so flags are suppressed.
-        const beams = Beam.generateBeams(vfNotes, {
-          beamRests: false,
-          stemDirection: Stem.UP,
-          groups: beamGroups,
-        });
-
+      const built = builtMeasures[measureNumber];
+      if (!measure.hidden && built) {
+        const { vfNotes, tuplets, beams } = built;
         const voice = new Voice({
           numBeats: score.timeSignature.beats,
           beatValue: score.timeSignature.beatType,
         }).setStrict(false);
         voice.addTickables(vfNotes);
-        // formatToStave reserves Stave.defaultPadding so the last note
-        // sits off the end bar similarly to the first note after the start bar.
-        new Formatter().joinVoices([voice]).formatToStave([voice], stave);
+        voice.setStave(stave);
+        // Format without justification, then pin each note to its fixed slot so
+        // notes never stretch to fill the measure.
+        new Formatter().joinVoices([voice]).format([voice], 0);
+        let cursor = 0;
+        vfNotes.forEach((vfNote, i) => {
+          const tickContext = vfNote.getTickContext();
+          const { notePx, totalLeftPx, totalRightPx } = tickContext.getMetrics();
+          const padding = vfNote.hasBeam() ? 0 : UNBEAMED_PADDING_PX / 2;
+          const noteX = cursor + padding + totalLeftPx;
+          tickContext.setX(noteX);
+          cursor =
+            noteX +
+            Math.max(noteSlotWidth(measure.notes[i].duration), notePx + totalRightPx) +
+            padding;
+        });
         voice.draw(context, stave);
         beams.forEach((beam) => beam.setContext(context).draw());
         tuplets.forEach((tuplet) => tuplet.setContext(context).draw());
