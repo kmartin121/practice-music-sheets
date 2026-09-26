@@ -89,6 +89,93 @@
   align-items: center;
 }
 
+.scan-queue {
+  margin: 0 0 1.5rem;
+  padding: 1rem 0 0;
+  border-top: 1px solid var(--rule);
+}
+
+.scan-queue-header h2 {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 1.25rem;
+  font-weight: 500;
+  margin: 0 0 0.35rem;
+}
+
+.scan-queue-header p {
+  margin: 0 0 0.85rem;
+}
+
+.scan-queue-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.85rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.scan-queue-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.65rem;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 0.35rem;
+}
+
+.scan-queue-thumb {
+  width: 3rem;
+  height: 3rem;
+  object-fit: cover;
+  border-radius: 0.25rem;
+  border: 1px solid var(--rule);
+  flex-shrink: 0;
+}
+
+.scan-queue-thumb-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.scan-queue-meta {
+  flex: 1;
+  min-width: 8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.scan-queue-index {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.scan-queue-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scan-queue-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.scan-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+}
+
 .sheet-list {
   margin-top: 2rem;
   padding-top: 1.5rem;

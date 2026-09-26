@@ -5,7 +5,7 @@ Local-first app for turning scanned melody sheets into editable digital MusicXML
 ## Features (v1)
 
 - Open a local folder (Chrome/Edge File System Access API) and list `.musicxml` / `.mxl` files
-- Import a scan (PNG/JPEG/PDF) via a hardened local Audiveris OMR sidecar → review MusicXML in the editor
+- Import a scan (PNG/JPEG/PDF) — or a queue of pages — via a hardened local Audiveris OMR sidecar → review MusicXML in the editor
 - Blank single-line staff with drag-from-palette notes
 - Practice mode: click a bar to hide notes behind a color rectangle
 - Print stylesheet for clean paper output
@@ -99,7 +99,9 @@ Audiveris may log `No installed OCR languages`. That mainly affects titles/lyric
 
 ### Scan tips
 
-Prefer a single-page, high-resolution, high-contrast crop. Audiveris sometimes splits one image into multiple movements (`*.mvt1.mxl`, `*.mvt2.mxl`); the sidecar merges those into one MusicXML score.
+Prefer high-resolution, high-contrast crops of each page. For multi-page sheets, use **Import scan** to queue several PNG/JPEG/PDF files, reorder them if needed, then **Build score**. Pages are converted one at a time (the sidecar only runs one OMR job at a time) and measures are stitched into a single score in page order.
+
+Audiveris sometimes splits one image into multiple movements (`*.mvt1.mxl`, `*.mvt2.mxl`); the sidecar merges those into one MusicXML score before the app receives it.
 
 **Grace notes / drum X-heads:** The sidecar enables Audiveris book switches `smallHeads`, `crossHeads`, and `drumNotation` in batch mode. Without `smallHeads`, Audiveris skips the CUE_BEAMS step and usually omits grace/acciaccatura notes from MusicXML. Even with the switch on, poor scan quality can still miss tiny heads—review the MusicXML panel if a flam or crushed note is absent.
 

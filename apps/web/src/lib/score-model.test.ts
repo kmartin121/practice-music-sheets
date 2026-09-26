@@ -6,6 +6,7 @@ import {
   durationBeats,
   measureFilledBeats,
   measureOverflows,
+  mergeScores,
   reflowOverflow,
   relocateNote,
   removeNote,
@@ -166,5 +167,98 @@ describe('score-model', () => {
     expect(next.measures[0].notes).toHaveLength(4);
     expect(next.measures[1].notes).toHaveLength(1);
     expect(next.measures[1].notes[0].id).toBe(newNoteId);
+  });
+
+  it('mergeScores concatenates measures from later pages', () => {
+    let page1 = createBlankScore({
+      title: 'Page One',
+      clef: 'treble',
+      keySignature: 'G',
+      timeSignature: { beats: 3, beatType: 4 },
+      measureCount: 1,
+    });
+    page1 = addNoteToMeasure(page1, page1.measures[0].id, {
+      pitch: 'C',
+      octave: 4,
+      duration: 'q',
+    });
+
+    let page2 = createBlankScore({
+      title: 'Page Two',
+      clef: 'bass',
+      keySignature: 'F',
+      timeSignature: { beats: 4, beatType: 4 },
+      measureCount: 2,
+    });
+    page2 = addNoteToMeasure(page2, page2.measures[0].id, {
+      pitch: 'E',
+      octave: 3,
+      duration: 'h',
+    });
+    page2 = addNoteToMeasure(page2, page2.measures[1].id, {
+      pitch: 'G',
+      octave: 3,
+      duration: 'qr',
+    });
+
+    const merged = mergeScores([page1, page2]);
+    expect(merged.title).toBe('Page One');
+    expect(merged.clef).toBe('treble');
+    expect(merged.keySignature).toBe('G');
+    expect(merged.timeSignature).toEqual({ beats: 3, beatType: 4 });
+    expect(merged.measures).toHaveLength(3);
+    expect(merged.measures[0].notes[0].pitch).toBe('C');
+    expect(merged.measures[1].notes[0].pitch).toBe('E');
+    expect(merged.measures[2].notes[0].duration).toBe('qr');
+  });
+
+  it('mergeScores assigns fresh measure and note ids', () => {
+    let page1 = createBlankScore({ measureCount: 1 });
+    page1 = addNoteToMeasure(page1, page1.measures[0].id, {
+      pitch: 'C',
+      octave: 4,
+      duration: 'q',
+      grace: [{ id: 'grace-old', pitch: 'D', octave: 4, duration: '16', slash: true }],
+    });
+    let page2 = createBlankScore({ measureCount: 1 });
+    page2 = addNoteToMeasure(page2, page2.measures[0].id, {
+      pitch: 'E',
+      octave: 4,
+      duration: 'q',
+    });
+
+    const originalIds = new Set([
+      page1.measures[0].id,
+      page1.measures[0].notes[0].id,
+      page1.measures[0].notes[0].grace![0].id,
+      page2.measures[0].id,
+      page2.measures[0].notes[0].id,
+    ]);
+
+    const merged = mergeScores([page1, page2]);
+    const mergedIds = [
+      merged.measures[0].id,
+      merged.measures[0].notes[0].id,
+      merged.measures[0].notes[0].grace![0].id,
+      merged.measures[1].id,
+      merged.measures[1].notes[0].id,
+    ];
+    expect(new Set(mergedIds).size).toBe(mergedIds.length);
+    for (const id of mergedIds) {
+      expect(originalIds.has(id)).toBe(false);
+    }
+  });
+
+  it('mergeScores skips later pages that have no notes', () => {
+    let page1 = createBlankScore({ measureCount: 1 });
+    page1 = addNoteToMeasure(page1, page1.measures[0].id, {
+      pitch: 'C',
+      octave: 4,
+      duration: 'q',
+    });
+    const blankPage = createBlankScore({ measureCount: 2 });
+    const merged = mergeScores([page1, blankPage]);
+    expect(merged.measures).toHaveLength(1);
+    expect(merged.measures[0].notes[0].pitch).toBe('C');
   });
 });

@@ -288,3 +288,45 @@ export function addEmptyMeasure(score: Score): Score {
     measures: [...score.measures, { id: createId('measure'), notes: [] }],
   };
 }
+
+function cloneMeasure(measure: Measure): Measure {
+  return {
+    id: createId('measure'),
+    width: measure.width,
+    notes: measure.notes.map(cloneNote),
+  };
+}
+
+function scoreHasNotes(score: Score): boolean {
+  return score.measures.some((measure) => measure.notes.length > 0);
+}
+
+/**
+ * Concatenate measures from multiple scanned pages into one score.
+ * Metadata (title, clef, key, time) comes from the first score.
+ * Later pages with no notes at all are skipped; measures that contain rests are kept.
+ */
+export function mergeScores(scores: Score[]): Score {
+  if (scores.length === 0) {
+    return createBlankScore({ measureCount: 0 });
+  }
+
+  const first = scores[0];
+  const measures: Measure[] = [];
+
+  for (let i = 0; i < scores.length; i += 1) {
+    const page = scores[i];
+    if (i > 0 && !scoreHasNotes(page)) continue;
+    for (const measure of page.measures) {
+      measures.push(cloneMeasure(measure));
+    }
+  }
+
+  return {
+    title: first.title,
+    clef: first.clef,
+    keySignature: first.keySignature,
+    timeSignature: { ...first.timeSignature },
+    measures,
+  };
+}

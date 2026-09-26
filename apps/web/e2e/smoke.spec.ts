@@ -36,10 +36,38 @@ test('mocked OMR import loads MusicXML into the editor', async ({ page }) => {
 
   await page.goto('/');
   await page.getByTestId('import-scan').setInputFiles(resolve(fixtures, 'tiny.png'));
+  await expect(page.getByTestId('scan-queue')).toBeVisible();
+  await page.getByTestId('scan-queue-build').click();
   await expect(page.getByTestId('editor')).toBeVisible();
   await expect(page.getByTestId('musicxml-panel')).toBeVisible();
   await expect(page.getByTestId('omr-summary')).toContainText('notes');
   await expect(page.locator('.score-svg svg')).toBeVisible();
+});
+
+test('mocked multi-page OMR builds one score from the queue', async ({ page }) => {
+  const xml = readFileSync(resolve(fixtures, 'sample-melody.musicxml'), 'utf8');
+  let omrCalls = 0;
+  await page.route('**/omr', async (route) => {
+    omrCalls += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/xml',
+      body: xml,
+    });
+  });
+
+  await page.goto('/');
+  await page.getByTestId('import-scan').setInputFiles([
+    resolve(fixtures, 'tiny.png'),
+    resolve(fixtures, 'tiny.png'),
+  ]);
+  await expect(page.getByTestId('scan-queue')).toBeVisible();
+  await expect(page.getByTestId('scan-queue').locator('.scan-queue-item')).toHaveCount(2);
+  await page.getByTestId('scan-queue-build').click();
+  await expect(page.getByTestId('editor')).toBeVisible();
+  // sample-melody has 2 measures; two pages → 4 measures after merge
+  await expect(page.locator('.measure-hit')).toHaveCount(4);
+  expect(omrCalls).toBe(2);
 });
 
 test('print stylesheet keeps score visible under print media', async ({ page }) => {
@@ -73,5 +101,5 @@ test('print keeps memorize cues for practice-hidden measures', async ({ page }) 
   await page.emulateMedia({ media: 'print' });
   await expect(page.locator('.hidden-measure-cue')).toBeVisible();
   await expect(page.locator('.hidden-measure-cue-label')).toHaveText('memorize');
-  await expect(page.locator('.measure-hit')).toBeHidden();
+  await expect(page.locator('.measure-hit').first()).toBeHidden();
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   isFileSystemAccessSupported,
   listMusicSheets,
@@ -8,12 +8,19 @@ import {
   readSheetText,
   type SheetFile,
 } from '../lib/file-system';
-import { createBlankScore } from '../lib/score-model';
+import { createBlankScore, mergeScores } from '../lib/score-model';
 import { parseMusicXml } from '../lib/musicxml-parse';
+import { serializeMusicXml } from '../lib/musicxml-serialize';
+import { filenameStem, runOmrOnFile } from '../lib/omr-client';
 import type { Score } from '../lib/score-model';
 import type { OpenMeta } from '../App';
-
-const OMR_URL = import.meta.env.VITE_OMR_URL ?? '';
+import {
+  createScanPages,
+  moveScanPage,
+  revokeScanPages,
+  type ScanPage,
+} from '../lib/scan-page-queue';
+import { ScanPageQueue } from './ScanPageQueue';
 
 type Props = {
   onOpenScore: (score: Score, meta: OpenMeta) => void;
@@ -25,7 +32,15 @@ export function Library({ onOpenScore, directory, onDirectoryChange }: Props) {
   const [sheets, setSheets] = useState<SheetFile[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [omrBusy, setOmrBusy] = useState(false);
+  const [scanQueueOpen, setScanQueueOpen] = useState(false);
+  const [scanPages, setScanPages] = useState<ScanPage[]>([]);
+  const [scanProgress, setScanProgress] = useState<string | null>(null);
+  const scanPagesRef = useRef(scanPages);
   const supported = isFileSystemAccessSupported();
+
+  useEffect(() => {
+    scanPagesRef.current = scanPages;
+  }, [scanPages]);
 
   const refresh = useCallback(async (dir: FileSystemDirectoryHandle) => {
     const list = await listMusicSheets(dir);
@@ -49,6 +64,12 @@ export function Library({ onOpenScore, directory, onDirectoryChange }: Props) {
       cancelled = true;
     };
   }, [directory, onDirectoryChange, refresh]);
+
+  useEffect(() => {
+    return () => {
+      revokeScanPages(scanPagesRef.current);
+    };
+  }, []);
 
   async function handleOpenFolder() {
     setError(null);
@@ -83,34 +104,59 @@ export function Library({ onOpenScore, directory, onDirectoryChange }: Props) {
     }
   }
 
-  async function handleImportScan(file: File) {
+  function openScanQueueWithFiles(files: FileList | File[]) {
+    setError(null);
+    const added = createScanPages(files);
+    if (added.length === 0) return;
+    setScanQueueOpen(true);
+    setScanPages((prev) => [...prev, ...added]);
+  }
+
+  function clearScanQueue() {
+    setScanPages((prev) => {
+      revokeScanPages(prev);
+      return [];
+    });
+    setScanQueueOpen(false);
+    setScanProgress(null);
+  }
+
+  function removeScanPage(id: string) {
+    setScanPages((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target) revokeScanPages([target]);
+      return prev.filter((p) => p.id !== id);
+    });
+  }
+
+  async function handleBuildScore() {
+    if (scanPages.length === 0 || omrBusy) return;
     setError(null);
     setOmrBusy(true);
+    const pages = [...scanPages];
     try {
-      const body = new FormData();
-      body.append('file', file);
-      let res: Response;
-      try {
-        res = await fetch(`${OMR_URL}/omr`, { method: 'POST', body });
-      } catch {
-        throw new Error(
-          'Cannot reach the OMR sidecar. In another terminal run: npm run dev:omr',
-        );
+      const scores: Score[] = [];
+      for (let i = 0; i < pages.length; i += 1) {
+        setScanProgress(`Scanning page ${i + 1} of ${pages.length}…`);
+        const xml = await runOmrOnFile(pages[i].file);
+        const pageScore = parseMusicXml(xml);
+        if (!pageScore.title || pageScore.title === 'Untitled') {
+          pageScore.title = filenameStem(pages[i].file.name);
+        }
+        scores.push(pageScore);
       }
-      if (!res.ok) {
-        const msg = await res.text();
-        throw new Error(msg || `OMR failed (${res.status})`);
-      }
-      const xml = await res.text();
-      const score = parseMusicXml(xml);
+
+      const score = mergeScores(scores);
       if (!score.title || score.title === 'Untitled') {
-        score.title = file.name.replace(/\.[^.]+$/, '');
+        score.title = filenameStem(pages[0].file.name);
       }
+
+      clearScanQueue();
       onOpenScore(score, {
         filename: null,
         fileHandle: null,
         dir: directory,
-        sourceXml: xml,
+        sourceXml: serializeMusicXml(score),
         fromOmr: true,
       });
     } catch (e) {
@@ -121,6 +167,7 @@ export function Library({ onOpenScore, directory, onDirectoryChange }: Props) {
       );
     } finally {
       setOmrBusy(false);
+      setScanProgress(null);
     }
   }
 
@@ -161,12 +208,12 @@ export function Library({ onOpenScore, directory, onDirectoryChange }: Props) {
             <input
               type="file"
               accept="image/png,image/jpeg,application/pdf,.png,.jpg,.jpeg,.pdf"
+              multiple
               hidden
               disabled={omrBusy}
               data-testid="import-scan"
               onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void handleImportScan(f);
+                if (e.target.files?.length) openScanQueueWithFiles(e.target.files);
                 e.target.value = '';
               }}
             />
@@ -189,13 +236,25 @@ export function Library({ onOpenScore, directory, onDirectoryChange }: Props) {
         {!supported && (
           <p className="warn">Folder access needs Chrome or Edge. You can still open a MusicXML file.</p>
         )}
-        {omrBusy && <p className="status">Converting scan with Audiveris…</p>}
         {error && (
           <p className="error" role="alert">
             {error}
           </p>
         )}
       </div>
+
+      {scanQueueOpen && (
+        <ScanPageQueue
+          pages={scanPages}
+          busy={omrBusy}
+          progress={scanProgress}
+          onAddFiles={openScanQueueWithFiles}
+          onMove={(id, direction) => setScanPages((prev) => moveScanPage(prev, id, direction))}
+          onRemove={removeScanPage}
+          onClear={clearScanQueue}
+          onBuild={() => void handleBuildScore()}
+        />
+      )}
 
       <section className="sheet-list">
         <h2>{directory ? `Sheets in ${directory.name}` : 'No folder open'}</h2>
