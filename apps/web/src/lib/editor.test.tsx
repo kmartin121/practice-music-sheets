@@ -47,6 +47,27 @@ describe('Editor practice + dirty state', () => {
     expect(screen.getByText('Unsaved')).toBeInTheDocument();
   });
 
+  it('renders a memorize cue when a practice-hidden measure is active', () => {
+    const score = createBlankScore({ title: 'Practice', measureCount: 2 });
+    render(
+      <Editor
+        initialScore={score}
+        meta={{ filename: null, fileHandle: null, dir: null }}
+        onBack={() => undefined}
+        onMetaChange={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('practice-toggle'));
+    const hit = document.querySelector('.measure-hit');
+    expect(hit).toBeTruthy();
+    fireEvent.click(hit!);
+
+    expect(document.querySelector('.measure-hit.measure-hidden')).toBeTruthy();
+    expect(document.querySelectorAll('.hidden-measure-cue')).toHaveLength(1);
+    expect(document.querySelector('.hidden-measure-cue-label')?.textContent).toBe('memorize');
+  });
+
   it('diagnoses OMR imports with empty measures vs dropped notes', () => {
     const emptyScore = createBlankScore({ title: 'Empty', measureCount: 2 });
     const { rerender } = render(

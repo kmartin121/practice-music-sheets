@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { columnStaveWidths } from '../components/ScoreCanvas';
+import { appendHiddenMeasureCue, columnStaveWidths } from '../components/ScoreCanvas';
 
 describe('columnStaveWidths', () => {
   it('aligns columns to the densest measure in each slot across systems', () => {
@@ -32,5 +32,18 @@ describe('columnStaveWidths', () => {
     ];
     const widths = columnStaveWidths(measures, 4);
     expect(widths[0]).toBeGreaterThanOrEqual(400 + 80);
+  });
+});
+
+describe('appendHiddenMeasureCue', () => {
+  it('draws a memorize cue and shared hatch pattern into the SVG', () => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    appendHiddenMeasureCue(svg, 20, 20, 220);
+    appendHiddenMeasureCue(svg, 240, 20, 220);
+
+    expect(svg.querySelectorAll('.hidden-measure-cue')).toHaveLength(2);
+    expect(svg.querySelector('#hidden-measure-hatch')).toBeTruthy();
+    expect(svg.querySelectorAll('#hidden-measure-hatch')).toHaveLength(1);
+    expect(svg.querySelector('.hidden-measure-cue-label')?.textContent).toBe('memorize');
   });
 });

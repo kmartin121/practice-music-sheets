@@ -48,4 +48,30 @@ test('print stylesheet keeps score visible under print media', async ({ page }) 
   await page.emulateMedia({ media: 'print' });
   await expect(page.getByTestId('score-canvas')).toBeVisible();
   await expect(page.getByTestId('note-palette')).toBeHidden();
+  const svg = page.locator('.score-svg svg');
+  await expect(svg).toBeVisible();
+  const { svgWidth, pageWidth } = await page.evaluate(() => {
+    const el = document.querySelector('.score-svg svg');
+    const scorePage = document.querySelector('.score-page');
+    return {
+      svgWidth: el?.getBoundingClientRect().width ?? 0,
+      pageWidth: scorePage?.getBoundingClientRect().width ?? 0,
+    };
+  });
+  expect(pageWidth).toBeGreaterThan(0);
+  // Four-measure system scales to the printable page content width.
+  expect(Math.abs(svgWidth - pageWidth)).toBeLessThan(2);
+});
+
+test('print keeps memorize cues for practice-hidden measures', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('new-blank').click();
+  await page.getByTestId('practice-toggle').click();
+  await page.locator('.measure-hit').first().click();
+  await expect(page.locator('.hidden-measure-cue')).toHaveCount(1);
+
+  await page.emulateMedia({ media: 'print' });
+  await expect(page.locator('.hidden-measure-cue')).toBeVisible();
+  await expect(page.locator('.hidden-measure-cue-label')).toHaveText('memorize');
+  await expect(page.locator('.measure-hit')).toBeHidden();
 });

@@ -1,1 +1,3 @@
-/* Print rules live in App.css (@media print). This file is reserved for extra print tweaks. */
+/* Print rules live in App.css (@media print).
+ * Score SVG scales to page width so each system of 4 measures fits the sheet.
+ * Practice-hidden bars keep an in-SVG memorize cue so it prints with the score. */

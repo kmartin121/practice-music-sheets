@@ -402,11 +402,45 @@ body.palette-dragging .note-hit {
 }
 
 .measure-hit.measure-hidden {
-  background: var(--hidden-bar);
-  opacity: 0.85;
+  /* SVG cue is the shared screen/print visual; keep a light tint for the hit target. */
+  background: color-mix(in srgb, var(--hidden-bar) 14%, transparent);
+  opacity: 1;
+}
+
+.hidden-measure-cue-fill {
+  fill: var(--hidden-bar);
+  fill-opacity: 0.16;
+  stroke: var(--hidden-bar);
+  stroke-width: 1.25;
+  stroke-dasharray: 5 3;
+}
+
+.hidden-measure-cue-hatch {
+  fill-opacity: 1;
+}
+
+.hidden-measure-hatch-line {
+  stroke: var(--hidden-bar);
+  stroke-width: 1.35;
+  stroke-opacity: 0.65;
+}
+
+.hidden-measure-cue-label {
+  fill: var(--hidden-bar);
+  font-family: 'Source Sans 3', 'Segoe UI', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  pointer-events: none;
+  user-select: none;
 }
 
 @media print {
+  @page {
+    margin: 0.5in;
+  }
+
   body {
     background: #fff;
   }
@@ -422,14 +456,45 @@ body.palette-dragging .note-hit {
   .editor,
   .score-page {
     max-width: none;
+    width: 100%;
     margin: 0;
     padding: 0;
     border: none;
     box-shadow: none;
     background: #fff;
+    overflow: visible;
   }
 
+  .score-canvas-wrap,
+  .score-svg {
+    width: 100% !important;
+  }
+
+  /* Scale the 4-measure system to the printable page width. */
+  .score-svg svg {
+    width: 100% !important;
+    max-width: 100%;
+    height: auto !important;
+  }
+
+  .score-overlay,
   .measure-hit {
-    display: none;
+    display: none !important;
+  }
+
+  /* Stronger memorization cue when ink-only printers mute light fills. */
+  .hidden-measure-cue-fill {
+    fill-opacity: 0.08;
+    stroke: #334155;
+    stroke-width: 1.5;
+  }
+
+  .hidden-measure-hatch-line {
+    stroke: #475569;
+    stroke-opacity: 0.85;
+  }
+
+  .hidden-measure-cue-label {
+    fill: #334155;
   }
 }

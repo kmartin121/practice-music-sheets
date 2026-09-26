@@ -25,6 +25,8 @@ const MEASURES_PER_SYSTEM = 4;
 const LINE_SPACING = 10;
 const STAFF_TOP_OFFSET = 40;
 const NOTE_SLOT_PX = 28;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const HIDDEN_HATCH_ID = 'hidden-measure-hatch';
 
 const PALETTE_MIME = 'application/x-note-palette';
 
@@ -127,6 +129,77 @@ export function columnStaveWidths(
   return columnBase.map((base, col) => (col === 0 ? base + SYSTEM_START_EXTRA : base));
 }
 
+function ensureHiddenMeasureDefs(svg: SVGSVGElement): void {
+  if (svg.querySelector(`#${HIDDEN_HATCH_ID}`)) return;
+  let defs = svg.querySelector('defs');
+  if (!defs) {
+    defs = document.createElementNS(SVG_NS, 'defs');
+    svg.insertBefore(defs, svg.firstChild);
+  }
+  const pattern = document.createElementNS(SVG_NS, 'pattern');
+  pattern.setAttribute('id', HIDDEN_HATCH_ID);
+  pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+  pattern.setAttribute('width', '9');
+  pattern.setAttribute('height', '9');
+  const line = document.createElementNS(SVG_NS, 'line');
+  line.setAttribute('x1', '0');
+  line.setAttribute('y1', '9');
+  line.setAttribute('x2', '9');
+  line.setAttribute('y2', '0');
+  line.setAttribute('class', 'hidden-measure-hatch-line');
+  pattern.appendChild(line);
+  defs.appendChild(pattern);
+}
+
+/**
+ * Draw a print-safe memorization cue into the SVG so it scales with the score.
+ * Empty staff + hatch reads as "notes removed for practice" in color and B&W.
+ */
+export function appendHiddenMeasureCue(
+  svg: SVGSVGElement,
+  x: number,
+  y: number,
+  staveWidth: number,
+): void {
+  ensureHiddenMeasureDefs(svg);
+  const g = document.createElementNS(SVG_NS, 'g');
+  g.setAttribute('class', 'hidden-measure-cue');
+  g.setAttribute('aria-label', 'Hidden for memorization');
+
+  const inset = 3;
+  const left = x + inset;
+  const top = y + STAFF_TOP_OFFSET - 8;
+  const width = Math.max(12, staveWidth - inset * 2);
+  const height = LINE_SPACING * 4 + 16;
+
+  const fill = document.createElementNS(SVG_NS, 'rect');
+  fill.setAttribute('x', String(left));
+  fill.setAttribute('y', String(top));
+  fill.setAttribute('width', String(width));
+  fill.setAttribute('height', String(height));
+  fill.setAttribute('class', 'hidden-measure-cue-fill');
+  g.appendChild(fill);
+
+  const hatch = document.createElementNS(SVG_NS, 'rect');
+  hatch.setAttribute('x', String(left));
+  hatch.setAttribute('y', String(top));
+  hatch.setAttribute('width', String(width));
+  hatch.setAttribute('height', String(height));
+  hatch.setAttribute('fill', `url(#${HIDDEN_HATCH_ID})`);
+  hatch.setAttribute('class', 'hidden-measure-cue-hatch');
+  g.appendChild(hatch);
+
+  const label = document.createElementNS(SVG_NS, 'text');
+  label.setAttribute('x', String(left + width / 2));
+  label.setAttribute('y', String(top + height / 2 + 4));
+  label.setAttribute('text-anchor', 'middle');
+  label.setAttribute('class', 'hidden-measure-cue-label');
+  label.textContent = 'memorize';
+  g.appendChild(label);
+
+  svg.appendChild(g);
+}
+
 export function ScoreCanvas({
   score,
   practiceMode,
@@ -210,6 +283,7 @@ export function ScoreCanvas({
     renderer.resize(width, height);
     const context = renderer.getContext();
     context.setFont('Lora, Georgia, serif', 14);
+    const svg = container.querySelector('svg');
 
     const clearAllGuides = () => {
       for (const layout of layoutsRef.current.values()) {
@@ -274,6 +348,10 @@ export function ScoreCanvas({
         stave.addTimeSignature(instructions.timeSignature);
       }
       stave.setContext(context).draw();
+
+      if (measure.hidden && svg instanceof SVGSVGElement) {
+        appendHiddenMeasureCue(svg, x, y, staveWidth);
+      }
 
       if (showMeasureNumbers) {
         const numberLabel = document.createElement('div');
