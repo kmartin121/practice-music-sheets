@@ -172,6 +172,25 @@ export function measureBeatStatus(score: Score, measure: Measure): MeasureBeatSt
   return 'full';
 }
 
+/** Filled vs expected beats, counted in the time signature's beat unit (6/8 counts eighths). */
+export function measureBeatCount(
+  score: Score,
+  measure: Measure,
+): { filled: number; expected: number } {
+  const perQuarter = score.timeSignature.beatType / 4;
+  return {
+    filled: measureFilledBeats(measure) * perQuarter,
+    expected: score.timeSignature.beats,
+  };
+}
+
+/** e.g. "3.25/4" — up to two decimals so 32nds and triplets stay readable. */
+export function formatMeasureBeats(score: Score, measure: Measure): string {
+  const { filled, expected } = measureBeatCount(score, measure);
+  const trimmed = Number(filled.toFixed(2));
+  return `${trimmed}/${expected}`;
+}
+
 export function addNoteToMeasure(
   score: Score,
   measureId: string,
@@ -262,6 +281,29 @@ export function splitOverfullMeasure(measure: Measure, capacity: number): Measur
       ...(measure.width ? { width: Math.round((measure.width * pieceBeats) / total) } : {}),
     };
   });
+}
+
+/**
+ * Stack an extra pitch onto an existing note so they sound together. Chord tones share
+ * the note's duration; rests and pitches already in the chord are left unchanged.
+ */
+export function addChordTone(score: Score, noteId: string, tone: ChordTone): Score {
+  const matches = (other: ChordTone) =>
+    other.pitch === tone.pitch && other.octave === tone.octave;
+  let changed = false;
+  const measures = score.measures.map((measure) => {
+    const index = measure.notes.findIndex((note) => note.id === noteId);
+    if (index < 0) return measure;
+    const note = measure.notes[index];
+    if (isRest(note.duration) || matches(note) || (note.chord ?? []).some(matches)) {
+      return measure;
+    }
+    changed = true;
+    const notes = [...measure.notes];
+    notes[index] = { ...note, chord: [...(note.chord ?? []), { ...tone }] };
+    return { ...measure, notes };
+  });
+  return changed ? { ...score, measures } : score;
 }
 
 export function removeNote(score: Score, noteId: string): Score {

@@ -296,6 +296,12 @@
   margin-right: 0.35rem;
 }
 
+.palette-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-left: 0.35rem;
+}
+
 .palette-item {
   display: inline-flex;
   align-items: center;
@@ -459,6 +465,25 @@ body.palette-dragging .measure-hit {
   bottom: 0;
   width: 2px;
   margin-left: -1px;
+}
+
+.drop-guide.is-chord .drop-guide-v {
+  width: 14px;
+  margin-left: -7px;
+  border-radius: 7px;
+  background: rgba(194, 65, 12, 0.18);
+  box-shadow: inset 0 0 0 2px rgba(194, 65, 12, 0.55);
+}
+
+.drop-guide.is-chord .drop-guide-v::after {
+  content: '+ chord';
+  position: absolute;
+  top: -1.1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.7rem;
+  white-space: nowrap;
+  color: rgb(194, 65, 12);
 }
 
 .note-hit {

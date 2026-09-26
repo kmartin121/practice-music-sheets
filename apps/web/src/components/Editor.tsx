@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Duration, Score } from '../lib/score-model';
 import {
+  addChordTone,
   addEmptyMeasure,
   addNoteToMeasure,
   copyNote,
@@ -33,6 +34,15 @@ function omrEmptyNotesMessage(xmlNoteCount: number): string {
   return ' — Audiveris exported no notes. Try a clearer, higher-resolution scan of a single page (grace notes need Audiveris “small heads”), then inspect MusicXML below or drag notes onto the staff.';
 }
 
+const MAX_UNDO_STEPS = 100;
+
+function isTextEntryTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+  );
+}
+
 export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
   const [score, setScore] = useState(initialScore);
   const [dirty, setDirty] = useState(false);
@@ -59,11 +69,48 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
     [score],
   );
 
-  const markDirty = useCallback((next: Score) => {
-    setScore(next);
+  const [undoStack, setUndoStack] = useState<Score[]>([]);
+  // Consecutive edits of the same kind (e.g. typing a title) collapse into one undo step.
+  const lastEditKindRef = useRef<string | null>(null);
+
+  const markDirty = useCallback(
+    (next: Score, editKind?: string) => {
+      const coalesce = editKind != null && editKind === lastEditKindRef.current;
+      lastEditKindRef.current = editKind ?? null;
+      if (!coalesce) setUndoStack((stack) => [...stack.slice(-(MAX_UNDO_STEPS - 1)), score]);
+      setScore(next);
+      setDirty(true);
+      setStatus(null);
+    },
+    [score],
+  );
+
+  const undo = useCallback(() => {
+    const previous = undoStack[undoStack.length - 1];
+    if (!previous) return;
+    setUndoStack(undoStack.slice(0, -1));
+    lastEditKindRef.current = null;
+    setScore(previous);
     setDirty(true);
     setStatus(null);
-  }, []);
+    setSelectedNoteId((id) =>
+      id && previous.measures.some((m) => m.notes.some((n) => n.id === id)) ? id : null,
+    );
+  }, [undoStack]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.key.toLowerCase() !== 'z') {
+        return;
+      }
+      // Leave native text undo alone inside inputs and the MusicXML editor.
+      if (isTextEntryTarget(event.target)) return;
+      event.preventDefault();
+      undo();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [undo]);
 
   useEffect(() => {
     if (!selectedNoteId) return;
@@ -106,6 +153,16 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
     [markDirty, score],
   );
 
+  const onAddChordTone = useCallback(
+    (noteId: string, pitch: string, octave: number) => {
+      const next = addChordTone(score, noteId, { pitch, octave });
+      if (next === score) return;
+      markDirty(next);
+      setSelectedNoteId(noteId);
+    },
+    [markDirty, score],
+  );
+
   const onMoveNote = useCallback(
     (
       noteId: string,
@@ -132,8 +189,7 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
   function applyMusicXml() {
     try {
       const next = parseMusicXml(musicXmlText);
-      setScore(next);
-      setDirty(true);
+      markDirty(next);
       setSelectedNoteId(null);
       setHiddenMeasureIds(new Set());
       const notes = next.measures.reduce((sum, m) => sum + m.notes.length, 0);
@@ -179,7 +235,9 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
           canSave={Boolean(meta.dir)}
           showMusicXml={showMusicXml}
           onToggleMusicXml={() => setShowMusicXml((v) => !v)}
-          onTitleChange={(title) => markDirty(updateScoreMeta(score, { title }))}
+          canUndo={undoStack.length > 0}
+          onUndo={undo}
+          onTitleChange={(title) => markDirty(updateScoreMeta(score, { title }), 'title')}
           onClefChange={(clef) => markDirty(updateScoreMeta(score, { clef }))}
           onKeyChange={(keySignature) => markDirty(updateScoreMeta(score, { keySignature }))}
           onTimeChange={(beats, beatType) =>
@@ -263,6 +321,7 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
           onSelectNote={setSelectedNoteId}
           onToggleMeasureHidden={onToggleMeasureHidden}
           onDropNote={onDropNote}
+          onAddChordTone={onAddChordTone}
           onMoveNote={onMoveNote}
         />
       </div>

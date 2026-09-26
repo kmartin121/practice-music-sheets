@@ -18,7 +18,8 @@ import type { Score } from '../lib/score-model';
 import { scoreToRenderInstructions, snapStaffY, yToPitch } from '../lib/vexflow-render';
 import type { RenderMeasure, RenderScore } from '../lib/vexflow-render';
 import type { Duration } from '../lib/score-model';
-import { measureBeatStatus } from '../lib/score-model';
+import { formatMeasureBeats, isRest, measureBeatStatus } from '../lib/score-model';
+import { PITCHED_NOTE_MIME } from './NotePalette';
 
 const EMPTY_MEASURE_WIDTH = 120;
 const DEFAULT_SYSTEM_START_EXTRA = 80;
@@ -53,6 +54,7 @@ type Props = {
     octave: number,
     index?: number,
   ) => void;
+  onAddChordTone: (noteId: string, pitch: string, octave: number) => void;
   onMoveNote: (
     noteId: string,
     measureId: string,
@@ -72,6 +74,8 @@ type MeasureLayout = {
   guideH: HTMLDivElement;
   guideV: HTMLDivElement;
   noteCentersX: number[];
+  noteIds: string[];
+  chordable: boolean[];
 };
 
 /** Snap the drop cursor to an insert slot (before/between/after notes). */
@@ -108,6 +112,34 @@ function insertSlotFromX(
     }
   }
   return best;
+}
+
+const CHORD_SNAP_MAX_PX = 8;
+
+export type DropTarget =
+  | { kind: 'insert'; index: number; x: number }
+  | { kind: 'chord'; noteIndex: number; x: number };
+
+/**
+ * Dropping right on a note stacks onto it as a chord; anywhere else inserts.
+ * The stacking zone shrinks with tight spacing so insert slots stay reachable.
+ */
+export function dropTargetFromX(
+  localX: number,
+  noteCentersX: number[],
+  chordable: boolean[],
+  measureWidth: number,
+): DropTarget {
+  for (let i = 0; i < noteCentersX.length; i += 1) {
+    if (!chordable[i]) continue;
+    const center = noteCentersX[i];
+    const neighborGaps = [noteCentersX[i - 1], noteCentersX[i + 1]]
+      .filter((x): x is number => x != null)
+      .map((x) => Math.abs(x - center));
+    const zone = Math.min(CHORD_SNAP_MAX_PX, ...neighborGaps.map((gap) => gap * 0.3));
+    if (Math.abs(localX - center) <= zone) return { kind: 'chord', noteIndex: i, x: center };
+  }
+  return { kind: 'insert', ...insertSlotFromX(localX, noteCentersX, measureWidth) };
 }
 
 const VEX_BASE_BEATS: Record<string, number> = {
@@ -319,6 +351,7 @@ export function ScoreCanvas({
   onSelectNote,
   onToggleMeasureHidden,
   onDropNote,
+  onAddChordTone,
   onMoveNote,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -328,6 +361,7 @@ export function ScoreCanvas({
     onSelectNote,
     onToggleMeasureHidden,
     onDropNote,
+    onAddChordTone,
     onMoveNote,
     clef: score.clef,
   });
@@ -335,6 +369,7 @@ export function ScoreCanvas({
     onSelectNote,
     onToggleMeasureHidden,
     onDropNote,
+    onAddChordTone,
     onMoveNote,
     clef: score.clef,
   };
@@ -417,16 +452,24 @@ export function ScoreCanvas({
       }
     };
 
-    const showGuide = (measureId: string, clientX: number, clientY: number) => {
+    const showGuide = (
+      measureId: string,
+      clientX: number,
+      clientY: number,
+      allowChord = false,
+    ) => {
       clearAllGuides();
       const layout = layoutsRef.current.get(measureId);
       if (!layout) return;
       const rect = layout.hit.getBoundingClientRect();
       const localX = clientX - rect.left;
       const snappedY = snapStaffY(clientY - rect.top, STAFF_TOP_OFFSET, LINE_SPACING);
-      const slot = insertSlotFromX(localX, layout.noteCentersX, rect.width);
+      const target = allowChord
+        ? dropTargetFromX(localX, layout.noteCentersX, layout.chordable, rect.width)
+        : { kind: 'insert' as const, ...insertSlotFromX(localX, layout.noteCentersX, rect.width) };
       layout.guideH.style.top = `${snappedY}px`;
-      layout.guideV.style.left = `${slot.x}px`;
+      layout.guideV.style.left = `${target.x}px`;
+      layout.guide.classList.toggle('is-chord', target.kind === 'chord');
       layout.guide.style.display = 'block';
       layout.hit.classList.add('drag-over');
     };
@@ -478,11 +521,12 @@ export function ScoreCanvas({
       if (showMeasureNumbers) {
         const numberLabel = document.createElement('div');
         numberLabel.className = 'measure-number no-print';
-        const beatStatus = measureBeatStatus(score, score.measures[measureNumber]);
+        const scoreMeasure = score.measures[measureNumber];
+        const beatStatus = measureBeatStatus(score, scoreMeasure);
         if (beatStatus === 'short' || beatStatus === 'over') {
           numberLabel.classList.add(`is-${beatStatus}`);
         }
-        numberLabel.textContent = String(measureNumber);
+        numberLabel.textContent = `${measureNumber} · ${formatMeasureBeats(score, scoreMeasure)}`;
         numberLabel.style.left = `${x}px`;
         numberLabel.style.top = `${y + STAVE_HEIGHT - 18}px`;
         numberLabel.style.width = `${staveWidth}px`;
@@ -516,6 +560,8 @@ export function ScoreCanvas({
         guideH,
         guideV,
         noteCentersX: [],
+        noteIds: [],
+        chordable: [],
       };
       layoutsRef.current.set(measure.id, layout);
 
@@ -526,7 +572,8 @@ export function ScoreCanvas({
       hit.addEventListener('dragover', (e) => {
         e.preventDefault();
         if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
-        showGuide(measure.id, e.clientX, e.clientY);
+        const pitched = Array.from(e.dataTransfer?.types ?? []).includes(PITCHED_NOTE_MIME);
+        showGuide(measure.id, e.clientX, e.clientY, pitched);
       });
       hit.addEventListener('dragleave', (e) => {
         if (e.relatedTarget instanceof Node && hit.contains(e.relatedTarget)) return;
@@ -546,6 +593,18 @@ export function ScoreCanvas({
         }
         const placed = placeFromPoint(measure.id, e.clientX, e.clientY);
         if (!placed) return;
+        const rect = hit.getBoundingClientRect();
+        const target = isRest(payload.duration)
+          ? null
+          : dropTargetFromX(e.clientX - rect.left, layout.noteCentersX, layout.chordable, rect.width);
+        if (target?.kind === 'chord') {
+          callbacksRef.current.onAddChordTone(
+            layout.noteIds[target.noteIndex],
+            placed.pitch,
+            placed.octave,
+          );
+          return;
+        }
         callbacksRef.current.onDropNote(
           measure.id,
           payload.duration,
@@ -593,6 +652,8 @@ export function ScoreCanvas({
           if (!el) return;
 
           layout.noteCentersX.push(vfNote.getAbsoluteX() - x);
+          layout.noteIds.push(noteId);
+          layout.chordable.push(!measure.notes[i].isRest);
 
           if (practiceMode) return;
 

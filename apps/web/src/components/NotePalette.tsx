@@ -1,4 +1,7 @@
-import type { Duration } from '../lib/score-model';
+import { isRest, type Duration } from '../lib/score-model';
+
+/** Drag types are readable during dragover (payloads are not), so flag pitched notes here. */
+export const PITCHED_NOTE_MIME = 'application/x-note-palette-pitched';
 
 const PALETTE: { label: string; duration: Duration }[] = [
   { label: 'Whole', duration: 'w' },
@@ -36,6 +39,7 @@ export function NotePalette({ disabled }: Props) {
               'application/x-note-palette',
               JSON.stringify({ duration: item.duration }),
             );
+            if (!isRest(item.duration)) e.dataTransfer.setData(PITCHED_NOTE_MIME, '1');
             e.dataTransfer.effectAllowed = 'copy';
             document.body.classList.add('palette-dragging');
           }}
@@ -46,6 +50,7 @@ export function NotePalette({ disabled }: Props) {
           {item.label}
         </button>
       ))}
+      <span className="palette-hint">Drop onto a note to stack a chord</span>
     </div>
   );
 }

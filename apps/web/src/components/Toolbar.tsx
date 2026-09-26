@@ -8,6 +8,8 @@ type Props = {
   selectedNoteId: string | null;
   canSave: boolean;
   showMusicXml: boolean;
+  canUndo: boolean;
+  onUndo: () => void;
   onToggleMusicXml: () => void;
   onTitleChange: (title: string) => void;
   onClefChange: (clef: Score['clef']) => void;
@@ -34,6 +36,8 @@ export function Toolbar({
   selectedNoteId,
   canSave,
   showMusicXml,
+  canUndo,
+  onUndo,
   onToggleMusicXml,
   onTitleChange,
   onClefChange,
@@ -112,6 +116,17 @@ export function Toolbar({
         aria-pressed={showMeasureNumbers}
       >
         Bar #s
+      </button>
+      <button
+        type="button"
+        className="btn"
+        onClick={onUndo}
+        disabled={!canUndo}
+        data-testid="undo"
+        data-keep-note-selection=""
+        title="Undo last change (⌘Z / Ctrl+Z)"
+      >
+        Undo
       </button>
       <button type="button" className="btn" onClick={onAddMeasure}>
         + Bar

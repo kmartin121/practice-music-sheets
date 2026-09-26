@@ -144,6 +144,63 @@ describe('Editor practice + dirty state', () => {
     expect(screen.getByTestId('omr-summary')).toHaveTextContent(/none mapped onto the staff/i);
   });
 
+  describe('undo', () => {
+    const renderEditor = (score = createBlankScore({ title: 'Test', measureCount: 1 })) =>
+      render(
+        <Editor
+          initialScore={score}
+          meta={{ filename: null, fileHandle: null, dir: null }}
+          onBack={() => undefined}
+          onMetaChange={() => undefined}
+        />,
+      );
+
+    it('restores a deleted note', () => {
+      const blank = createBlankScore({ title: 'Test', measureCount: 1 });
+      renderEditor(
+        addNoteToMeasure(blank, blank.measures[0].id, { pitch: 'F', octave: 4, duration: 'q' }),
+      );
+      expect(screen.getByTestId('undo')).toBeDisabled();
+
+      // jsdom lacks PointerEvent; MouseEvent carries the `button` the canvas checks.
+      fireEvent(
+        document.querySelector('.note-hit')!,
+        new MouseEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      fireEvent(window, new MouseEvent('pointerup', { button: 0 }));
+      expect(screen.getByTestId('delete-note')).toBeEnabled();
+      fireEvent.click(screen.getByTestId('delete-note'));
+      expect(document.querySelectorAll('.note-hit')).toHaveLength(0);
+
+      fireEvent.click(screen.getByTestId('undo'));
+      expect(document.querySelectorAll('.note-hit')).toHaveLength(1);
+      expect(screen.getByTestId('undo')).toBeDisabled();
+    });
+
+    it('reverts an added bar with Ctrl+Z outside text fields', () => {
+      renderEditor();
+      fireEvent.click(screen.getByText('+ Bar'));
+      expect(document.querySelectorAll('.measure-hit')).toHaveLength(2);
+
+      fireEvent.keyDown(screen.getByLabelText('Score title'), { key: 'z', ctrlKey: true });
+      expect(document.querySelectorAll('.measure-hit')).toHaveLength(2);
+
+      fireEvent.keyDown(document.body, { key: 'z', ctrlKey: true });
+      expect(document.querySelectorAll('.measure-hit')).toHaveLength(1);
+    });
+
+    it('undoes a run of title keystrokes as one step', () => {
+      renderEditor();
+      const title = screen.getByLabelText('Score title');
+      fireEvent.change(title, { target: { value: 'Te' } });
+      fireEvent.change(title, { target: { value: 'Tem' } });
+      fireEvent.change(title, { target: { value: 'Temp' } });
+      fireEvent.click(screen.getByTestId('undo'));
+      expect(title).toHaveValue('Test');
+      expect(screen.getByTestId('undo')).toBeDisabled();
+    });
+  });
+
   it('shows a disabled Copy note control until a note is selected', () => {
     const score = createBlankScore({ title: 'Test', measureCount: 1 });
     render(

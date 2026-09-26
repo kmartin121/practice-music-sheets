@@ -489,6 +489,81 @@ describe('musicxml parse/serialize', () => {
     expect(new Set(score.measures.map((m) => m.id)).size).toBe(4);
   });
 
+  describe('Audiveris spacing and width hints', () => {
+    const at = (x: number, note: string) => note.replace('<note>', `<note default-x="${x}">`);
+    const withWidths = (xml: string, widths: number[]) =>
+      widths.reduce(
+        (doc, width, i) =>
+          doc.replace(`<measure number="${i + 1}">`, `<measure number="${i + 1}" width="${width}">`),
+        xml,
+      );
+    const fullBar = [0, 1, 2, 3]
+      .map((beat) => at(10 + beat * 78, drumNote('F', 4, 8, 'quarter')))
+      .join('');
+
+    it('does not treat the natural space after a quarter note as a missing rest', () => {
+      const xml = drumDoc(
+        [
+          at(8, drumNote('F', 4, 6, 'eighth', '<dot/>')),
+          at(52, drumNote('F', 4, 1, '32nd')),
+          at(69, drumNote('F', 4, 1, '32nd')),
+          at(86, drumNote('E', 5, 8, 'quarter')),
+          at(163, drumNote('F', 4, 6, 'eighth', '<dot/>')),
+          at(208, drumNote('F', 4, 2, '16th')),
+          at(224, drumNote('F', 4, 2, '16th')),
+        ].join(''),
+      );
+      const notes = parseMusicXml(xml).measures[0].notes;
+      expect(notes.map((n) => n.duration)).toEqual(['8d', '32', '32', 'q', '8d', '16', '16']);
+    });
+
+    it('still fills a rest when a gap is wider than its note accounts for', () => {
+      const xml = drumDoc(
+        [
+          at(27, drumNote('F', 4, 8, 'quarter')),
+          at(142, drumNote('E', 5, 4, 'eighth')),
+          at(181, drumNote('F', 4, 8, 'quarter')),
+          at(258, drumNote('E', 5, 8, 'quarter')),
+        ].join(''),
+      );
+      const notes = parseMusicXml(xml).measures[0].notes;
+      expect(notes.map((n) => n.duration)).toEqual(['q', '8r', '8', 'q', 'q']);
+    });
+
+    it('keeps a slightly overfull single-width bar intact instead of splitting it', () => {
+      const overfull = `${fullBar}${drumNote('F', 5, 2, '16th')}`;
+      const score = parseMusicXml(withWidths(drumDoc(fullBar, overfull, fullBar), [320, 343, 320]));
+      expect(score.measures).toHaveLength(3);
+      expect(measureFilledBeats(score.measures[1])).toBeCloseTo(4.25);
+    });
+
+    it('splits a double-width measure holding two bars of notes', () => {
+      const score = parseMusicXml(
+        withWidths(drumDoc(fullBar, fullBar + fullBar, fullBar), [320, 647, 320]),
+      );
+      expect(score.measures).toHaveLength(4);
+      expect(score.measures.every((m) => measureFilledBeats(m) === 4)).toBe(true);
+    });
+
+    it('adds an empty bar after a double-width measure whose second bar was dropped', () => {
+      const score = parseMusicXml(
+        withWidths(drumDoc(fullBar, fullBar, fullBar), [320, 679, 320]),
+      );
+      expect(score.measures.map((m) => m.notes.length)).toEqual([4, 4, 0, 4]);
+      expect(score.measures[2].width).toBe(340);
+    });
+
+    it('adds the empty bar before when the surviving notes sit in the second half', () => {
+      const lateBar = [0, 1, 2, 3]
+        .map((beat) => at(340 + beat * 78, drumNote('F', 4, 8, 'quarter')))
+        .join('');
+      const score = parseMusicXml(
+        withWidths(drumDoc(fullBar, lateBar, fullBar), [320, 679, 320]),
+      );
+      expect(score.measures.map((m) => m.notes.length)).toEqual([4, 0, 4, 4]);
+    });
+  });
+
   it('rejects empty and oversized input', () => {
     expect(() => parseMusicXml('')).toThrow(/empty/i);
     const huge = `<score-partwise>${'a'.repeat(MAX_MUSICXML_BYTES)}</score-partwise>`;

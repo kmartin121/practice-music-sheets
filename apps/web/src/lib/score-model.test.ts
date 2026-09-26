@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addChordTone,
   addNoteToMeasure,
   copyNote,
   createBlankScore,
   durationBeats,
+  formatMeasureBeats,
   measureBeatStatus,
   measureFilledBeats,
   measureOverflows,
@@ -34,6 +36,45 @@ describe('score-model', () => {
     expect(pieces.map((p) => p.notes.map((n) => n.id))).toEqual([['a'], ['b', 'c']]);
     expect(pieces[0].id).toBe('m1');
     expect(splitOverfullMeasure({ id: 'x', notes: measure.notes.slice(0, 1) }, 4)).toHaveLength(1);
+  });
+
+  it('stacks chord tones onto a note without duplicating pitches or touching rests', () => {
+    const blank = createBlankScore({ measureCount: 1 });
+    const measureId = blank.measures[0].id;
+    let score = addNoteToMeasure(blank, measureId, { pitch: 'C', octave: 4, duration: 'q' });
+    score = addNoteToMeasure(score, measureId, { pitch: 'B', octave: 4, duration: 'qr' });
+    const [note, rest] = score.measures[0].notes;
+
+    score = addChordTone(score, note.id, { pitch: 'E', octave: 4 });
+    score = addChordTone(score, note.id, { pitch: 'G', octave: 4 });
+    expect(score.measures[0].notes[0].chord).toEqual([
+      { pitch: 'E', octave: 4 },
+      { pitch: 'G', octave: 4 },
+    ]);
+    expect(score.measures[0].notes[0].duration).toBe('q');
+
+    expect(addChordTone(score, note.id, { pitch: 'C', octave: 4 })).toBe(score);
+    expect(addChordTone(score, note.id, { pitch: 'E', octave: 4 })).toBe(score);
+    expect(addChordTone(score, rest.id, { pitch: 'E', octave: 4 })).toBe(score);
+  });
+
+  it('formats filled vs expected beats in the time signature beat unit', () => {
+    const fourFour = createBlankScore({ measureCount: 1 });
+    const id44 = fourFour.measures[0].id;
+    let score = addNoteToMeasure(fourFour, id44, { pitch: 'F', octave: 4, duration: 'hd' });
+    score = addNoteToMeasure(score, id44, { pitch: 'F', octave: 4, duration: '32' });
+    score = addNoteToMeasure(score, id44, { pitch: 'F', octave: 4, duration: '32' });
+    expect(formatMeasureBeats(score, score.measures[0])).toBe('3.25/4');
+    expect(formatMeasureBeats(fourFour, fourFour.measures[0])).toBe('0/4');
+
+    const sixEight = createBlankScore({ measureCount: 1, timeSignature: { beats: 6, beatType: 8 } });
+    const id68 = sixEight.measures[0].id;
+    score = addNoteToMeasure(sixEight, id68, { pitch: 'F', octave: 4, duration: 'qd' });
+    expect(formatMeasureBeats(score, score.measures[0])).toBe('3/6');
+
+    const triplet = { actual: 3, normal: 2 };
+    score = addNoteToMeasure(fourFour, id44, { pitch: 'F', octave: 4, duration: '8', tuplet: triplet });
+    expect(formatMeasureBeats(score, score.measures[0])).toBe('0.33/4');
   });
 
   it('scales tuplet notes to their sounding length', () => {

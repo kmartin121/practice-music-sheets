@@ -277,9 +277,16 @@ function readDefaultX(noteNode: Record<string, unknown>): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 /**
  * Audiveris sometimes keeps visual spacing (default-x) for a rest it never emitted.
- * When a bar is underfull, insert the missing duration into the largest default-x gap.
+ * When a bar is underfull, insert the missing duration into the gap whose width
+ * exceeds what its left note's duration accounts for.
  */
 export function fillImpliedRestsFromSpacing(
   notes: Note[],
@@ -292,29 +299,36 @@ export function fillImpliedRestsFromSpacing(
   // empty bars or ordinary underfull measures without spacing evidence.
   if (missing <= 1e-9 || notes.length < 2) return notes;
 
-  const gaps: { insertIndex: number; gap: number }[] = [];
+  const gaps: { insertIndex: number; gap: number; beats: number }[] = [];
   for (let i = 1; i < notes.length; i += 1) {
     const left = defaultXs[i - 1];
     const right = defaultXs[i];
-    if (left == null || right == null) continue;
-    gaps.push({ insertIndex: i, gap: right - left });
+    const beats = noteBeats(notes[i - 1]);
+    if (left == null || right == null || right <= left || beats <= 0) continue;
+    gaps.push({ insertIndex: i, gap: right - left, beats });
   }
   if (gaps.length === 0) return notes;
 
-  let best = gaps[0];
-  for (let i = 1; i < gaps.length; i += 1) {
-    if (gaps[i].gap > best.gap) best = gaps[i];
+  let insertIndex = gaps[0].insertIndex;
+  if (gaps.length > 1) {
+    // Long notes get wide gaps too, so compare each gap against the spacing-per-beat
+    // of the other gaps rather than against their raw widths.
+    let bestExcess = -Infinity;
+    for (const candidate of gaps) {
+      const pxPerBeat = median(
+        gaps.filter((g) => g !== candidate).map((g) => g.gap / g.beats),
+      );
+      const excess = candidate.gap - candidate.beats * pxPerBeat;
+      if (excess >= missing * pxPerBeat * 0.5 && excess > bestExcess) {
+        bestExcess = excess;
+        insertIndex = candidate.insertIndex;
+      }
+    }
+    if (bestExcess === -Infinity) return notes;
   }
 
-  const otherGaps = gaps.filter((g) => g.insertIndex !== best.insertIndex).map((g) => g.gap);
-  const avgOther =
-    otherGaps.length > 0 ? otherGaps.reduce((sum, gap) => sum + gap, 0) / otherGaps.length : 0;
-
-  // Require a clearly larger hole than neighboring gaps (Audiveris omitted-rest pattern).
-  if (otherGaps.length > 0 && best.gap < avgOther * 1.5) return notes;
-
   const next = [...notes];
-  next.splice(best.insertIndex, 0, restFromBeats(missing));
+  next.splice(insertIndex, 0, restFromBeats(missing));
   return next;
 }
 
@@ -577,6 +591,54 @@ function extractPartInnerXml(xml: string, partIndex: number): string {
   return partChunks[partIndex] ?? xml;
 }
 
+type ParsedMeasure = {
+  measure: Measure;
+  capacityBeats: number;
+  firstDefaultX: number | null;
+};
+
+/**
+ * OMR misses barlines (repeats, tempo marks), packing several printed bars into one
+ * measure. Audiveris widths reveal how many printed bars a measure spans: split
+ * overfull measures only when the width agrees, and pad with empty bars when
+ * Audiveris dropped a whole bar's notes.
+ */
+export function repairMissedBarlines(parsed: ParsedMeasure[]): Measure[] {
+  const filledBeats = (m: Measure) => m.notes.reduce((sum, note) => sum + noteBeats(note), 0);
+  const singleBarWidths = parsed
+    .filter(
+      ({ measure, capacityBeats }) =>
+        measure.width && measure.notes.length > 0 && filledBeats(measure) <= capacityBeats + 1e-9,
+    )
+    .map(({ measure }) => measure.width as number);
+  const barWidth = singleBarWidths.length > 0 ? median(singleBarWidths) : null;
+
+  return parsed.flatMap(({ measure, capacityBeats, firstDefaultX }) => {
+    if (!barWidth || !measure.width) return splitOverfullMeasure(measure, capacityBeats);
+
+    const printedBars = Math.max(1, Math.round(measure.width / barWidth));
+    const filled = filledBeats(measure);
+    // Slightly overfull single-width bars are misread durations, not missed barlines.
+    if (printedBars === 1 && filled < capacityBeats * 2 - 1e-9) return [measure];
+
+    const pieces = splitOverfullMeasure(measure, capacityBeats);
+    const missingBars = printedBars - pieces.length;
+    if (missingBars <= 0 || measure.notes.length === 0) return pieces;
+
+    const pieceWidth = Math.round(measure.width / printedBars);
+    const barsBefore =
+      firstDefaultX == null
+        ? 0
+        : Math.min(missingBars, Math.floor(firstDefaultX / pieceWidth));
+    const emptyBar = (): Measure => ({ id: createId('measure'), notes: [], width: pieceWidth });
+    return [
+      ...Array.from({ length: barsBefore }, emptyBar),
+      ...pieces.map((piece) => ({ ...piece, width: pieceWidth })),
+      ...Array.from({ length: missingBars - barsBefore }, emptyBar),
+    ];
+  });
+}
+
 export function parseMusicXml(xml: string): Score {
   if (!xml || !xml.trim()) {
     throw new MusicXmlParseError('MusicXML is empty');
@@ -643,7 +705,7 @@ export function parseMusicXml(xml: string): Score {
   let keySignature = 'C';
   let timeSignature = { beats: 4, beatType: 4 };
   let divisions = 4;
-  const measures: Measure[] = [];
+  const parsedMeasures: ParsedMeasure[] = [];
 
   for (let measureIndex = 0; measureIndex < measureNodes.length; measureIndex += 1) {
     const measureNode = measureNodes[measureIndex];
@@ -675,8 +737,10 @@ export function parseMusicXml(xml: string): Score {
     const inner = measureInners[measureIndex] ?? '';
     const capacityBeats = timeSignature.beats * (4 / timeSignature.beatType);
     let notes: Note[];
+    let firstDefaultX: number | null = null;
     if (inner.length > 0) {
       const parsed = parseMeasureBodyInOrder(inner, divisions);
+      firstDefaultX = parsed.defaultXs[0] ?? null;
       notes = fillImpliedRestsFromSpacing(parsed.notes, parsed.defaultXs, capacityBeats);
     } else {
       // Fallback if measure regex missed (malformed whitespace, etc.).
@@ -718,6 +782,7 @@ export function parseMusicXml(xml: string): Score {
           defaultXs.push(readDefaultX(noteNode));
         }
       }
+      firstDefaultX = defaultXs[0] ?? null;
       notes = fillImpliedRestsFromSpacing(collected, defaultXs, capacityBeats);
     }
 
@@ -729,9 +794,10 @@ export function parseMusicXml(xml: string): Score {
         ? { width: Number(textOf(measureNode['@_width'])) }
         : {}),
     };
-    // OMR misses barlines (repeats, tempo marks), packing several printed bars into one measure.
-    measures.push(...splitOverfullMeasure(measure, capacityBeats));
+    parsedMeasures.push({ measure, capacityBeats, firstDefaultX });
   }
+
+  const measures = repairMissedBarlines(parsedMeasures);
 
   if (measures.length === 0) {
     throw new MusicXmlParseError('No measures found in MusicXML');
