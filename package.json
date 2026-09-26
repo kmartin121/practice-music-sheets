@@ -1,0 +1,23 @@
+{
+  "name": "practice-music-sheets",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local-first practice music sheets: scan → MusicXML → editable digital score",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=web",
+    "dev:omr": "npm run dev --workspace=omr-server",
+    "dev:all": "npm run dev --workspace=web & npm run dev --workspace=omr-server",
+    "build": "npm run build --workspace=web && npm run build --workspace=omr-server",
+    "test": "npm run test --workspace=web && npm run test --workspace=omr-server",
+    "test:e2e": "npm run test:e2e --workspace=web",
+    "audit": "npm audit --audit-level=high"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kmartin121/practice-music-sheets.git"
+  },
+  "license": "MIT"
+}

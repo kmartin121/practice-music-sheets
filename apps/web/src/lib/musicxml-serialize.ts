@@ -1,0 +1,138 @@
+import type { Accidental, Duration, Score } from './score-model';
+import { isRest } from './score-model';
+
+const KEY_NAME_TO_FIFTHS: Record<string, number> = {
+  Cb: -7,
+  Gb: -6,
+  Db: -5,
+  Ab: -4,
+  Eb: -3,
+  Bb: -2,
+  F: -1,
+  C: 0,
+  G: 1,
+  D: 2,
+  A: 3,
+  E: 4,
+  B: 5,
+  'F#': 6,
+  'C#': 7,
+};
+
+const DURATION_TO_TYPE: Record<string, string> = {
+  w: 'whole',
+  h: 'half',
+  q: 'quarter',
+  '8': 'eighth',
+  '16': '16th',
+};
+
+const DURATION_TO_DIVISIONS: Record<string, number> = {
+  w: 16,
+  h: 8,
+  q: 4,
+  '8': 2,
+  '16': 1,
+};
+
+function escapeXml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+}
+
+function alterFor(accidental?: Accidental): number | undefined {
+  if (accidental === 'sharp') return 1;
+  if (accidental === 'flat') return -1;
+  if (accidental === 'natural') return 0;
+  return undefined;
+}
+
+function noteXml(
+  pitch: string,
+  octave: number,
+  duration: Duration,
+  accidental: Accidental | undefined,
+  divisions: number,
+): string {
+  const base = duration.replace(/r$/, '');
+  const type = DURATION_TO_TYPE[base] ?? 'quarter';
+  const dur = DURATION_TO_DIVISIONS[base] ?? 4;
+  const lines: string[] = ['      <note>'];
+  if (isRest(duration)) {
+    lines.push('        <rest/>');
+  } else {
+    lines.push('        <pitch>');
+    lines.push(`          <step>${escapeXml(pitch)}</step>`);
+    const alter = alterFor(accidental);
+    if (alter !== undefined && alter !== 0) {
+      lines.push(`          <alter>${alter}</alter>`);
+    }
+    lines.push(`          <octave>${octave}</octave>`);
+    lines.push('        </pitch>');
+  }
+  lines.push(`        <duration>${dur}</duration>`);
+  lines.push(`        <type>${type}</type>`);
+  if (accidental && !isRest(duration)) {
+    lines.push(`        <accidental>${accidental}</accidental>`);
+  }
+  lines.push('      </note>');
+  void divisions;
+  return lines.join('\n');
+}
+
+export function serializeMusicXml(score: Score): string {
+  const fifths = KEY_NAME_TO_FIFTHS[score.keySignature] ?? 0;
+  const clefSign = score.clef === 'bass' ? 'F' : 'G';
+  const clefLine = score.clef === 'bass' ? 4 : 2;
+  const divisions = 4;
+
+  const measureBlocks = score.measures
+    .map((measure, index) => {
+      const attrs =
+        index === 0
+          ? `      <attributes>
+        <divisions>${divisions}</divisions>
+        <key>
+          <fifths>${fifths}</fifths>
+        </key>
+        <time>
+          <beats>${score.timeSignature.beats}</beats>
+          <beat-type>${score.timeSignature.beatType}</beat-type>
+        </time>
+        <clef>
+          <sign>${clefSign}</sign>
+          <line>${clefLine}</line>
+        </clef>
+      </attributes>`
+          : '';
+
+      const notes = measure.notes
+        .map((n) => noteXml(n.pitch, n.octave, n.duration, n.accidental, divisions))
+        .join('\n');
+
+      return `    <measure number="${index + 1}">
+${attrs}${attrs && notes ? '\n' : ''}${notes}
+    </measure>`;
+    })
+    .join('\n');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work>
+    <work-title>${escapeXml(score.title)}</work-title>
+  </work>
+  <part-list>
+    <score-part id="P1">
+      <part-name>Melody</part-name>
+    </score-part>
+  </part-list>
+  <part id="P1">
+${measureBlocks}
+  </part>
+</score-partwise>
+`;
+}
