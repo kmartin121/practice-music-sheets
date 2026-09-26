@@ -12,6 +12,7 @@ import {
   Fraction,
   Stem,
   Dot,
+  Tuplet,
 } from 'vexflow';
 import type { Score } from '../lib/score-model';
 import { scoreToRenderInstructions, snapStaffY, yToPitch } from '../lib/vexflow-render';
@@ -467,6 +468,16 @@ export function ScoreCanvas({
           return note;
         });
 
+        // Tuplets rescale note ticks, so they must exist before beaming and formatting.
+        const tuplets = measure.tuplets.map(
+          (group) =>
+            new Tuplet(vfNotes.slice(group.start, group.end + 1), {
+              numNotes: group.actual,
+              notesOccupied: group.normal,
+              bracketed: true,
+            }),
+        );
+
         // Beams must be created before format/draw so flags are suppressed.
         const beams = Beam.generateBeams(vfNotes, {
           beamRests: false,
@@ -484,6 +495,7 @@ export function ScoreCanvas({
         new Formatter().joinVoices([voice]).formatToStave([voice], stave);
         voice.draw(context, stave);
         beams.forEach((beam) => beam.setContext(context).draw());
+        tuplets.forEach((tuplet) => tuplet.setContext(context).draw());
 
         const overlayRect = overlay.getBoundingClientRect();
 

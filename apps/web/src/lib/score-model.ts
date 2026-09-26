@@ -43,10 +43,22 @@ export type GraceTone = {
   slash?: boolean;
 };
 
+/**
+ * `actual` notes played in the time of `normal` (triplet = 3:2).
+ * `start` / `stop` mark bracket boundaries when the source provided them.
+ */
+export type Tuplet = {
+  actual: number;
+  normal: number;
+  start?: boolean;
+  stop?: boolean;
+};
+
 export type Note = {
   id: string;
   pitch: string;
   octave: number;
+  /** Written (visual) value; sounding length is scaled by `tuplet` when present. */
   duration: Duration;
   accidental?: Accidental;
   notehead?: Notehead;
@@ -54,6 +66,7 @@ export type Note = {
   chord?: ChordTone[];
   /** Grace notes sounding immediately before this principal note. */
   grace?: GraceTone[];
+  tuplet?: Tuplet;
 };
 
 export type Measure = {
@@ -105,6 +118,13 @@ export function durationBeats(duration: Duration): number {
   return DURATION_BEATS[duration];
 }
 
+/** Sounding length in quarter-note beats, including tuplet scaling. */
+export function noteBeats(note: Pick<Note, 'duration' | 'tuplet'>): number {
+  const base = durationBeats(note.duration);
+  if (!note.tuplet || note.tuplet.actual <= 0) return base;
+  return (base * note.tuplet.normal) / note.tuplet.actual;
+}
+
 export function createId(prefix = 'id'): string {
   return `${prefix}-${crypto.randomUUID()}`;
 }
@@ -135,7 +155,7 @@ export function measureBeatCapacity(score: Score): number {
 }
 
 export function measureFilledBeats(measure: Measure): number {
-  return measure.notes.reduce((sum, note) => sum + durationBeats(note.duration), 0);
+  return measure.notes.reduce((sum, note) => sum + noteBeats(note), 0);
 }
 
 export function measureOverflows(score: Score, measure: Measure): boolean {
@@ -179,7 +199,7 @@ export function reflowOverflow(score: Score): Score {
     let filled = 0;
     let splitAt = measures[i].notes.length;
     for (let n = 0; n < measures[i].notes.length; n += 1) {
-      const next = filled + durationBeats(measures[i].notes[n].duration);
+      const next = filled + noteBeats(measures[i].notes[n]);
       if (next > capacity + 1e-9) {
         splitAt = n;
         break;
@@ -220,6 +240,7 @@ export function cloneNote(note: Note): Note {
     id: createId('note'),
     chord: note.chord?.map((tone) => ({ ...tone })),
     grace: note.grace?.map((g) => ({ ...g, id: createId('grace') })),
+    tuplet: note.tuplet ? { ...note.tuplet } : undefined,
   };
 }
 

@@ -1,4 +1,4 @@
-import type { Accidental, Duration, GraceTone, Notehead, Score } from './score-model';
+import type { Accidental, Duration, GraceTone, Notehead, Score, Tuplet } from './score-model';
 import { isRest } from './score-model';
 
 const KEY_NAME_TO_FIFTHS: Record<string, number> = {
@@ -37,18 +37,19 @@ const DURATION_DOTS: Record<string, number> = {
   '8d': 1,
 };
 
-const DIVISIONS_PER_QUARTER = 8;
+/** Divisible by 8 (32nds) and 3 (triplets) so common values stay integral. */
+const DIVISIONS_PER_QUARTER = 24;
 
 const DURATION_TO_DIVISIONS: Record<string, number> = {
-  w: 32,
-  h: 16,
-  hd: 24,
-  q: 8,
-  qd: 12,
-  '8': 4,
-  '8d': 6,
-  '16': 2,
-  '32': 1,
+  w: 96,
+  h: 48,
+  hd: 72,
+  q: 24,
+  qd: 36,
+  '8': 12,
+  '8d': 18,
+  '16': 6,
+  '32': 3,
 };
 
 const NOTEHEAD_TO_XML: Record<Notehead, string> = {
@@ -105,11 +106,13 @@ function noteXml(
   duration: Duration,
   accidental: Accidental | undefined,
   divisions: number,
-  options?: { chord?: boolean; notehead?: Notehead },
+  options?: { chord?: boolean; notehead?: Notehead; tuplet?: Tuplet },
 ): string {
   const base = duration.replace(/r$/, '');
   const type = DURATION_TO_TYPE[base] ?? 'quarter';
-  const dur = DURATION_TO_DIVISIONS[base] ?? DIVISIONS_PER_QUARTER;
+  const written = DURATION_TO_DIVISIONS[base] ?? DIVISIONS_PER_QUARTER;
+  const tuplet = options?.tuplet;
+  const dur = tuplet ? Math.max(1, Math.round((written * tuplet.normal) / tuplet.actual)) : written;
   const lines: string[] = ['      <note>'];
   if (options?.chord) {
     lines.push('        <chord/>');
@@ -135,8 +138,20 @@ function noteXml(
   if (accidental && !isRest(duration)) {
     lines.push(`        <accidental>${accidental}</accidental>`);
   }
+  if (tuplet) {
+    lines.push('        <time-modification>');
+    lines.push(`          <actual-notes>${tuplet.actual}</actual-notes>`);
+    lines.push(`          <normal-notes>${tuplet.normal}</normal-notes>`);
+    lines.push('        </time-modification>');
+  }
   if (options?.notehead && options.notehead !== 'normal' && !isRest(duration)) {
     lines.push(`        <notehead>${NOTEHEAD_TO_XML[options.notehead]}</notehead>`);
+  }
+  if (tuplet && !options?.chord && (tuplet.start || tuplet.stop)) {
+    lines.push('        <notations>');
+    if (tuplet.start) lines.push('          <tuplet type="start"/>');
+    if (tuplet.stop) lines.push('          <tuplet type="stop"/>');
+    lines.push('        </notations>');
   }
   lines.push('      </note>');
   void divisions;
@@ -174,12 +189,14 @@ export function serializeMusicXml(score: Score): string {
           const graceBlock = (n.grace ?? []).map((g) => graceNoteXml(g)).join('\n');
           const primary = noteXml(n.pitch, n.octave, n.duration, n.accidental, divisions, {
             notehead: n.notehead,
+            tuplet: n.tuplet,
           });
           const chordTones = (n.chord ?? [])
             .map((tone) =>
               noteXml(tone.pitch, tone.octave, n.duration, tone.accidental, divisions, {
                 chord: true,
                 notehead: tone.notehead,
+                tuplet: n.tuplet,
               }),
             )
             .join('\n');

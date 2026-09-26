@@ -391,6 +391,33 @@ describe('musicxml parse/serialize', () => {
     ]);
   });
 
+  it('parses triplets with bracket markers and round-trips them', () => {
+    const tm = '<time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>';
+    const xml = drumDoc(
+      [
+        drumNote('F', 4, 8, 'quarter'),
+        drumNote('F', 4, 8, 'quarter'),
+        drumNote('E', 5, 5, 'quarter', `${tm}<notations><tuplet type="start"/></notations>`),
+        drumNote('E', 5, 5, 'quarter', tm),
+        drumNote('E', 5, 6, 'quarter', `${tm}<notations><tuplet type="stop"/></notations>`),
+      ].join(''),
+    );
+    const score = parseMusicXml(xml);
+    const notes = score.measures[0].notes;
+    expect(notes.map((n) => n.duration)).toEqual(['q', 'q', 'q', 'q', 'q']);
+    expect(notes[2].tuplet).toEqual({ actual: 3, normal: 2, start: true });
+    expect(notes[3].tuplet).toEqual({ actual: 3, normal: 2 });
+    expect(notes[4].tuplet).toEqual({ actual: 3, normal: 2, stop: true });
+    expect(measureFilledBeats(score.measures[0])).toBeCloseTo(4);
+
+    const serialized = serializeMusicXml(score);
+    expect(serialized).toMatch(/<actual-notes>3<\/actual-notes>/);
+    expect(serialized).toMatch(/<tuplet type="start"\/>/);
+    const again = parseMusicXml(serialized);
+    expect(again.measures[0].notes.map((n) => n.tuplet)).toEqual(notes.map((n) => n.tuplet));
+    expect(measureFilledBeats(again.measures[0])).toBeCloseTo(4);
+  });
+
   it('rejects empty and oversized input', () => {
     expect(() => parseMusicXml('')).toThrow(/empty/i);
     const huge = `<score-partwise>${'a'.repeat(MAX_MUSICXML_BYTES)}</score-partwise>`;

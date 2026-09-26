@@ -6,6 +6,7 @@ import {
   pitchToVexKey,
   scoreToRenderInstructions,
   snapStaffY,
+  tupletGroups,
   yToPitch,
 } from './vexflow-render';
 
@@ -36,6 +37,35 @@ describe('vexflow-render helpers', () => {
       isRest: true,
       dots: 1,
     });
+  });
+
+  it('groups tuplet notes using source start/stop markers', () => {
+    const t = { actual: 3, normal: 2 };
+    const groups = tupletGroups([
+      { duration: 'q' },
+      ...Array.from({ length: 12 }, (_, i) => ({
+        duration: '16' as const,
+        tuplet: { ...t, ...(i === 0 ? { start: true } : {}), ...(i === 11 ? { stop: true } : {}) },
+      })),
+    ]);
+    expect(groups).toEqual([{ start: 1, end: 12, actual: 3, normal: 2 }]);
+  });
+
+  it('closes unmarked tuplet groups after `actual` notes of the first value', () => {
+    const t = { actual: 3, normal: 2 };
+    const groups = tupletGroups([
+      { duration: '8', tuplet: t },
+      { duration: '8', tuplet: t },
+      { duration: '8', tuplet: t },
+      { duration: '8', tuplet: t },
+      { duration: '8', tuplet: t },
+      { duration: '8', tuplet: t },
+      { duration: 'q' },
+    ]);
+    expect(groups).toEqual([
+      { start: 0, end: 2, actual: 3, normal: 2 },
+      { start: 3, end: 5, actual: 3, normal: 2 },
+    ]);
   });
 
   it('maps staff Y to nearest pitch', () => {

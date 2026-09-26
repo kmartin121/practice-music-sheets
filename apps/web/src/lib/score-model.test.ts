@@ -7,6 +7,7 @@ import {
   measureFilledBeats,
   measureOverflows,
   mergeScores,
+  noteBeats,
   reflowOverflow,
   relocateNote,
   removeNote,
@@ -16,6 +17,11 @@ describe('score-model', () => {
   it('counts a dotted half rest as three beats', () => {
     expect(durationBeats('hdr')).toBe(3);
     expect(durationBeats('hd')).toBe(3);
+  });
+
+  it('scales tuplet notes to their sounding length', () => {
+    expect(noteBeats({ duration: '8', tuplet: { actual: 3, normal: 2 } })).toBeCloseTo(1 / 3);
+    expect(noteBeats({ duration: 'q' })).toBe(1);
   });
 
   it('creates a blank sheet with empty measures', () => {

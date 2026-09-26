@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { NotePalette } from '../components/NotePalette';
 import { Editor } from '../components/Editor';
-import { createBlankScore } from './score-model';
+import { addNoteToMeasure, createBlankScore } from './score-model';
 
 describe('NotePalette', () => {
   it('sets drag payload for a quarter note', () => {
@@ -45,6 +45,46 @@ describe('Editor practice + dirty state', () => {
       target: { value: 'Edited' },
     });
     expect(screen.getByText('Unsaved')).toBeInTheDocument();
+  });
+
+  it('renders 32nds, dotted eighths, and triplet brackets without VexFlow errors', () => {
+    let score = createBlankScore({ title: 'Rhythms', measureCount: 2 });
+    const [first, second] = score.measures.map((m) => m.id);
+    const t = { actual: 3, normal: 2 };
+    for (const note of [
+      { pitch: 'F', octave: 4, duration: '8d' as const },
+      { pitch: 'F', octave: 4, duration: '32' as const },
+      { pitch: 'F', octave: 4, duration: '32' as const },
+      { pitch: 'E', octave: 5, duration: 'q' as const },
+      { pitch: 'F', octave: 4, duration: 'h' as const },
+    ]) {
+      score = addNoteToMeasure(score, first, note);
+    }
+    score = addNoteToMeasure(score, second, { pitch: 'F', octave: 4, duration: 'h' });
+    score = addNoteToMeasure(score, second, {
+      pitch: 'E',
+      octave: 5,
+      duration: 'q',
+      tuplet: { ...t, start: true },
+    });
+    score = addNoteToMeasure(score, second, { pitch: 'E', octave: 5, duration: 'q', tuplet: t });
+    score = addNoteToMeasure(score, second, {
+      pitch: 'E',
+      octave: 5,
+      duration: 'q',
+      tuplet: { ...t, stop: true },
+    });
+
+    render(
+      <Editor
+        initialScore={score}
+        meta={{ filename: null, fileHandle: null, dir: null }}
+        onBack={() => undefined}
+        onMetaChange={() => undefined}
+      />,
+    );
+    expect(document.querySelectorAll('.measure-hit')).toHaveLength(2);
+    expect(document.querySelectorAll('.score-svg svg .vf-tuplet')).toHaveLength(1);
   });
 
   it('renders a memorize cue when a practice-hidden measure is active', () => {

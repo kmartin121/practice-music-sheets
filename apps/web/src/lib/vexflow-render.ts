@@ -1,5 +1,5 @@
-import type { Duration, Notehead, Score } from './score-model';
-import { isRest } from './score-model';
+import type { Duration, Note, Notehead, Score } from './score-model';
+import { durationBeats, isRest } from './score-model';
 
 /** Pure helpers that map Score → VexFlow-friendly render instructions. */
 
@@ -21,11 +21,20 @@ export type RenderNote = {
   grace?: RenderGraceNote[];
 };
 
+/** Inclusive note-index range drawn under one tuplet bracket. */
+export type TupletGroup = {
+  start: number;
+  end: number;
+  actual: number;
+  normal: number;
+};
+
 export type RenderMeasure = {
   id: string;
   notes: RenderNote[];
   hidden: boolean;
   width?: number;
+  tuplets: TupletGroup[];
 };
 
 export type RenderScore = {
@@ -95,6 +104,54 @@ export function durationDots(duration: Duration): number {
   return match ? match[0].length : 0;
 }
 
+/**
+ * Group consecutive tuplet notes into brackets. Source start/stop markers win;
+ * without them a group closes once it spans `actual` notes of its first value.
+ */
+export function tupletGroups(notes: ReadonlyArray<Pick<Note, 'duration' | 'tuplet'>>): TupletGroup[] {
+  const groups: TupletGroup[] = [];
+  let open: (TupletGroup & { flagged: boolean; written: number; unit: number }) | null = null;
+
+  const close = (end: number) => {
+    if (!open) return;
+    groups.push({ start: open.start, end, actual: open.actual, normal: open.normal });
+    open = null;
+  };
+
+  for (let i = 0; i < notes.length; i += 1) {
+    const tuplet = notes[i].tuplet;
+    if (
+      open &&
+      (!tuplet ||
+        tuplet.actual !== open.actual ||
+        tuplet.normal !== open.normal ||
+        tuplet.start)
+    ) {
+      close(i - 1);
+    }
+    if (!tuplet) continue;
+
+    const written = durationBeats(notes[i].duration);
+    if (!open) {
+      open = {
+        start: i,
+        end: i,
+        actual: tuplet.actual,
+        normal: tuplet.normal,
+        flagged: Boolean(tuplet.start),
+        written: 0,
+        unit: written,
+      };
+    }
+    open.written += written;
+    if (tuplet.stop || (!open.flagged && open.written >= open.actual * open.unit - 1e-9)) {
+      close(i);
+    }
+  }
+  close(notes.length - 1);
+  return groups;
+}
+
 /** Map Y offset within a staff (top=0) to nearest pitch for treble/bass. */
 export function yToPitch(
   y: number,
@@ -137,6 +194,7 @@ export function scoreToRenderInstructions(
       id: measure.id,
       hidden: hiddenMeasureIds.has(measure.id),
       width: measure.width,
+      tuplets: tupletGroups(measure.notes),
       notes: measure.notes.map((note) => {
         const dots = durationDots(note.duration);
         return {

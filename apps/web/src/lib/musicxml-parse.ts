@@ -1,8 +1,8 @@
 import { XMLParser } from 'fast-xml-parser';
 import {
   createId,
-  durationBeats,
   isRest,
+  noteBeats,
   type Accidental,
   type Duration,
   type GraceTone,
@@ -10,6 +10,7 @@ import {
   type Note,
   type Notehead,
   type Score,
+  type Tuplet,
 } from './score-model';
 
 export const MAX_MUSICXML_BYTES = 5 * 1024 * 1024;
@@ -114,6 +115,30 @@ function durationFromDivisions(
   return nearestDuration(raw / divisions, isRest);
 }
 
+function parseTuplet(noteNode: Record<string, unknown>): Tuplet | undefined {
+  const mod = noteNode['time-modification'] as Record<string, unknown> | undefined;
+  if (!mod) return undefined;
+  const actual = Number(textOf(mod['actual-notes']));
+  const normal = Number(textOf(mod['normal-notes']));
+  if (!Number.isFinite(actual) || !Number.isFinite(normal) || actual <= 0 || normal <= 0) {
+    return undefined;
+  }
+  if (actual === normal) return undefined;
+
+  const tuplet: Tuplet = { actual, normal };
+  const notations = asArray<Record<string, unknown>>(
+    noteNode.notations as Record<string, unknown> | undefined,
+  );
+  for (const notation of notations) {
+    for (const marker of asArray(notation.tuplet as Record<string, unknown> | undefined)) {
+      const kind = textOf(marker['@_type']).toLowerCase();
+      if (kind === 'start') tuplet.start = true;
+      if (kind === 'stop') tuplet.stop = true;
+    }
+  }
+  return tuplet;
+}
+
 function parseDuration(
   noteNode: Record<string, unknown>,
   isRest: boolean,
@@ -135,6 +160,12 @@ function parseDuration(
     // Dotted half / quarter / eighth are exact; other dotted values snap to the nearest duration.
     for (let i = 0; i < dots; i++) beats *= 1.5;
     return nearestDuration(beats, isRest);
+  }
+  // Without <type>, <duration> is the sounding length; undo tuplet scaling to get the written value.
+  const tuplet = parseTuplet(noteNode);
+  const raw = Number(textOf(noteNode.duration));
+  if (tuplet && divisions > 0 && raw > 0) {
+    return nearestDuration(((raw / divisions) * tuplet.actual) / tuplet.normal, isRest);
   }
   return durationFromDivisions(noteNode, divisions, isRest) ?? ((isRest ? 'qr' : 'q') as Duration);
 }
@@ -205,12 +236,14 @@ function parseNote(noteNode: Record<string, unknown>, divisions: number): Note |
   if (noteNode.cue != null) return null;
   const isRestNote = noteNode.rest != null;
   const duration = parseDuration(noteNode, isRestNote, divisions);
+  const tuplet = parseTuplet(noteNode);
   if (isRestNote) {
     return {
       id: createId('note'),
       pitch: 'B',
       octave: 4,
       duration,
+      ...(tuplet ? { tuplet } : {}),
     };
   }
   const pitch = resolvePitch(noteNode);
@@ -223,6 +256,7 @@ function parseNote(noteNode: Record<string, unknown>, divisions: number): Note |
     duration,
     accidental: parseAccidental(noteNode),
     ...(notehead ? { notehead } : {}),
+    ...(tuplet ? { tuplet } : {}),
   };
 }
 
@@ -251,7 +285,7 @@ export function fillImpliedRestsFromSpacing(
   defaultXs: (number | null)[],
   capacityBeats: number,
 ): Note[] {
-  const filled = notes.reduce((sum, note) => sum + durationBeats(note.duration), 0);
+  const filled = notes.reduce((sum, note) => sum + noteBeats(note), 0);
   const missing = capacityBeats - filled;
   // Only synthesize rests when Audiveris left a visible hole (default-x), not for
   // empty bars or ordinary underfull measures without spacing evidence.
