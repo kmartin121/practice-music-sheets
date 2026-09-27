@@ -11,18 +11,81 @@
   --selected-soft: #dcfce7;
   --warn: #9a3412;
   --error: #991b1b;
-  --hidden-bar: #5b8def;
+  --hidden-bar: var(--accent);
   --rule: #d6d0c4;
   --shadow: 0 18px 50px rgba(28, 25, 23, 0.08);
-  font-family: 'Source Sans 3', 'Segoe UI', sans-serif;
-  color: var(--ink);
-  background:
+  --surface: rgba(255, 255, 255, 0.7);
+  --surface-soft: rgba(255, 255, 255, 0.55);
+  --surface-strong: #fff;
+  --field: #fffef9;
+  --on-selected: #166534;
+  --accent-hover: #0c574b;
+  --badge-bg: #fef3c7;
+  --badge-ink: #92400e;
+  --short: #b45309;
+  --chrome-bg: linear-gradient(180deg, rgba(251, 248, 242, 0.98) 0%, rgba(247, 243, 235, 0.96) 100%);
+  --page-bg: linear-gradient(180deg, #fffcf7 0%, #f4efe4 100%);
+  --app-bg:
     radial-gradient(circle at top left, rgba(15, 107, 92, 0.12), transparent 40%),
     linear-gradient(160deg, #fbf8f2 0%, var(--paper) 45%, #e8efe9 100%);
+  color-scheme: light;
+  font-family: 'Source Sans 3', 'Segoe UI', sans-serif;
+  color: var(--ink);
+  background: var(--app-bg);
   line-height: 1.45;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+}
+
+:root[data-theme='dark'] {
+  --ink: #ece7df;
+  --muted: #a8a29e;
+  --paper: #171513;
+  --paper-deep: #221f1c;
+  --accent: #3fb8a3;
+  --accent-soft: rgba(63, 184, 163, 0.18);
+  --selected: #4ade80;
+  --selected-soft: rgba(74, 222, 128, 0.16);
+  --warn: #fdba74;
+  --error: #fca5a5;
+  --hidden-bar: var(--accent);
+  --rule: #3a3530;
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  --surface: rgba(255, 255, 255, 0.05);
+  --surface-soft: rgba(255, 255, 255, 0.04);
+  --surface-strong: #2a2622;
+  --field: #1e1b18;
+  --on-selected: #bbf7d0;
+  --accent-hover: #2f9c89;
+  --badge-bg: rgba(251, 191, 36, 0.18);
+  --badge-ink: #fcd34d;
+  --short: #fbbf24;
+  --chrome-bg: linear-gradient(180deg, rgba(23, 21, 19, 0.97) 0%, rgba(28, 25, 23, 0.94) 100%);
+  --app-bg:
+    radial-gradient(circle at top left, rgba(63, 184, 163, 0.1), transparent 40%),
+    linear-gradient(160deg, #1a1816 0%, var(--paper) 45%, #121614 100%);
+  color-scheme: dark;
+}
+
+/* Notation renders as black ink, so the sheet itself stays paper-colored in dark mode. */
+:root[data-theme='dark'] .score-page {
+  --ink: #1c1917;
+  --muted: #57534e;
+  --selected: #16a34a;
+  --selected-soft: #dcfce7;
+  --error: #991b1b;
+  --hidden-bar: #0f6b5c;
+  --rule: #d6d0c4;
+  --on-selected: #166534;
+  --short: #b45309;
+  --page-bg: linear-gradient(180deg, #d8d1c3 0%, #cbc3b3 100%);
+  color: var(--ink);
+  border-color: #3a3530;
+}
+
+:root[data-theme='dark'] .note-label:not(.is-selected) {
+  background: rgba(255, 255, 255, 0.6);
 }
 
 * {

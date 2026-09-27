@@ -47,7 +47,7 @@
 .btn {
   appearance: none;
   border: 1px solid var(--rule);
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--surface);
   color: var(--ink);
   padding: 0.55rem 0.95rem;
   border-radius: 0.35rem;
@@ -56,7 +56,7 @@
 }
 
 .btn:hover:not(:disabled) {
-  background: #fff;
+  background: var(--surface-strong);
   border-color: var(--accent);
 }
 
@@ -72,7 +72,7 @@
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: #0c574b;
+  background: var(--accent-hover);
 }
 
 .btn.active {
@@ -120,7 +120,7 @@
   align-items: center;
   gap: 0.65rem;
   padding: 0.55rem 0.65rem;
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--surface-soft);
   border-radius: 0.35rem;
 }
 
@@ -141,7 +141,7 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--muted);
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--surface-strong);
 }
 
 .scan-queue-meta {
@@ -200,14 +200,15 @@
   width: 100%;
   text-align: left;
   border: none;
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--surface-soft);
+  color: var(--ink);
   padding: 0.85rem 1rem;
   border-radius: 0.35rem;
   cursor: pointer;
 }
 
 .sheet-link:hover {
-  background: #fff;
+  background: var(--surface-strong);
 }
 
 .muted {
@@ -233,7 +234,7 @@
   align-items: center;
   margin-bottom: 0.65rem;
   padding: 0.75rem;
-  background: rgba(255, 255, 255, 0.65);
+  background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: 0.5rem;
   box-shadow: var(--shadow);
@@ -252,7 +253,8 @@
   border: 1px solid var(--rule);
   border-radius: 0.3rem;
   padding: 0.35rem 0.5rem;
-  background: #fff;
+  background: var(--surface-strong);
+  color: var(--ink);
 }
 
 .title-input {
@@ -264,8 +266,8 @@
 
 .dirty-badge {
   font-size: 0.75rem;
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--badge-bg);
+  color: var(--badge-ink);
   padding: 0.2rem 0.5rem;
   border-radius: 999px;
 }
@@ -284,8 +286,7 @@
   z-index: 30;
   margin: 0 -0.35rem 1rem;
   padding: 0.35rem 0.35rem 0.75rem;
-  background:
-    linear-gradient(180deg, rgba(251, 248, 242, 0.98) 0%, rgba(247, 243, 235, 0.96) 100%);
+  background: var(--chrome-bg);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid transparent;
 }
@@ -310,7 +311,7 @@
   padding: 0.35rem 0.65rem;
   border: 1px solid var(--rule);
   border-radius: 0.35rem;
-  background: #fff;
+  background: var(--surface-strong);
   cursor: grab;
   white-space: nowrap;
   font-size: 0.8rem;
@@ -326,7 +327,19 @@
 .palette-item.is-selected {
   background: var(--selected-soft);
   border-color: var(--selected);
-  color: #166534;
+  color: var(--on-selected);
+}
+
+.theme-toggle {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
 }
 
 .palette-toggle {
@@ -335,7 +348,7 @@
 }
 
 .score-page {
-  background: linear-gradient(180deg, #fffcf7 0%, #f4efe4 100%);
+  background: var(--page-bg);
   border: 1px solid var(--rule);
   border-radius: 0.75rem;
   padding: 1.5rem 1rem 2rem;
@@ -352,7 +365,7 @@
 .musicxml-panel {
   margin: 0 0 1rem;
   padding: 0.85rem 1rem 1rem;
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: 0.5rem;
 }
@@ -390,7 +403,7 @@
   border: 1px solid var(--rule);
   border-radius: 0.35rem;
   padding: 0.75rem;
-  background: #fffef9;
+  background: var(--field);
   color: var(--ink);
 }
 
@@ -441,7 +454,7 @@
 }
 
 .note-label.is-selected {
-  color: #166534;
+  color: var(--on-selected);
   background: var(--selected-soft);
   box-shadow: inset 0 0 0 1px var(--selected);
 }
@@ -451,7 +464,7 @@
 }
 
 .measure-number.is-short {
-  color: #b45309;
+  color: var(--short);
 }
 
 .measure-number.is-over {
@@ -592,10 +605,13 @@ body.palette-dragging .note-hit {
 .hidden-measure-cue-label {
   fill: var(--hidden-bar);
   font-family: 'Source Sans 3', 'Segoe UI', sans-serif;
-  font-size: 11px;
+  font-size: 24px;
   font-weight: 600;
-  letter-spacing: 0.06em;
   text-transform: lowercase;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.85);
+  stroke-width: 4px;
+  stroke-linejoin: round;
   pointer-events: none;
   user-select: none;
 }
@@ -605,15 +621,18 @@ body.palette-dragging .note-hit {
     margin: 0.5in;
   }
 
+  :root,
   body {
     background: #fff;
+    color: #1c1917;
   }
 
   .no-print,
   .editor-chrome,
   .toolbar,
   .note-palette,
-  .library-actions {
+  .library-actions,
+  .theme-toggle {
     display: none !important;
   }
 

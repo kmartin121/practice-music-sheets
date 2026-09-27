@@ -378,13 +378,23 @@ export function appendHiddenMeasureCue(
 
   const label = document.createElementNS(SVG_NS, 'text');
   label.setAttribute('x', String(left + width / 2));
-  label.setAttribute('y', String(top + height / 2 + 4));
+  label.setAttribute('y', String(top + height / 2));
   label.setAttribute('text-anchor', 'middle');
+  label.setAttribute('dominant-baseline', 'central');
   label.setAttribute('class', 'hidden-measure-cue-label');
   label.textContent = 'memorize';
   g.appendChild(label);
 
   svg.appendChild(g);
+
+  // Text can only be measured once attached; shrink to fit narrow bars so it stays visibly centered.
+  const maxTextWidth = width - 16;
+  const textWidth =
+    typeof label.getComputedTextLength === 'function' ? label.getComputedTextLength() : 0;
+  if (textWidth > maxTextWidth && maxTextWidth > 0) {
+    const fontSize = parseFloat(getComputedStyle(label).fontSize) || 24;
+    label.style.fontSize = `${Math.max(10, (fontSize * maxTextWidth) / textWidth)}px`;
+  }
 }
 
 export function ScoreCanvas({
