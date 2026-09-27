@@ -323,6 +323,17 @@
   cursor: grabbing;
 }
 
+.palette-item.is-selected {
+  background: var(--selected-soft);
+  border-color: var(--selected);
+  color: #166534;
+}
+
+.palette-toggle {
+  margin-left: 0.35rem;
+  font-size: 0.8rem;
+}
+
 .score-page {
   background: linear-gradient(180deg, #fffcf7 0%, #f4efe4 100%);
   border: 1px solid var(--rule);
@@ -410,6 +421,35 @@
   user-select: none;
 }
 
+.note-label {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateX(-50%);
+  padding: 0.05rem 0.2rem;
+  border-radius: 0.2rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.6rem;
+  line-height: 1.15;
+  white-space: nowrap;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.85);
+  pointer-events: auto;
+  user-select: none;
+}
+
+.note-label.is-selected {
+  color: #166534;
+  background: var(--selected-soft);
+  box-shadow: inset 0 0 0 1px var(--selected);
+}
+
+.note-label.is-unmapped {
+  color: var(--error);
+}
+
 .measure-number.is-short {
   color: #b45309;
 }
@@ -494,9 +534,13 @@ body.palette-dragging .measure-hit {
   border-radius: 0.25rem;
 }
 
-.note-hit.is-selected {
-  outline: 2px solid rgba(194, 65, 12, 0.45);
-  outline-offset: 1px;
+.note-outline {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  border: 2px solid color-mix(in srgb, var(--selected) 55%, transparent);
+  border-radius: 0.25rem;
+  box-sizing: border-box;
 }
 
 .note-hit.is-dragging,
@@ -518,7 +562,7 @@ body.palette-dragging .note-hit {
 }
 
 .score-svg .note-selected {
-  filter: drop-shadow(0 0 2px rgba(194, 65, 12, 0.45));
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--selected) 45%, transparent));
 }
 
 .measure-hit.measure-hidden {

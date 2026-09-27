@@ -5,6 +5,7 @@ type Props = {
   dirty: boolean;
   practiceMode: boolean;
   showMeasureNumbers: boolean;
+  showNoteLabels: boolean;
   selectedNoteId: string | null;
   canSave: boolean;
   showMusicXml: boolean;
@@ -17,6 +18,7 @@ type Props = {
   onTimeChange: (beats: number, beatType: number) => void;
   onTogglePractice: () => void;
   onToggleMeasureNumbers: () => void;
+  onToggleNoteLabels: () => void;
   onSave: () => void;
   onSaveAs: () => void;
   onPrint: () => void;
@@ -33,6 +35,7 @@ export function Toolbar({
   dirty,
   practiceMode,
   showMeasureNumbers,
+  showNoteLabels,
   selectedNoteId,
   canSave,
   showMusicXml,
@@ -45,6 +48,7 @@ export function Toolbar({
   onTimeChange,
   onTogglePractice,
   onToggleMeasureNumbers,
+  onToggleNoteLabels,
   onSave,
   onSaveAs,
   onPrint,
@@ -116,6 +120,16 @@ export function Toolbar({
         aria-pressed={showMeasureNumbers}
       >
         Bar #s
+      </button>
+      <button
+        type="button"
+        className={`btn ${showNoteLabels ? 'active' : ''}`}
+        onClick={onToggleNoteLabels}
+        data-testid="note-labels-toggle"
+        aria-pressed={showNoteLabels}
+        title="Show each note's stored value and the palette button it matches"
+      >
+        Labels
       </button>
       <button
         type="button"

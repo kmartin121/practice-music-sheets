@@ -306,6 +306,36 @@ export function addChordTone(score: Score, noteId: string, tone: ChordTone): Sco
   return changed ? { ...score, measures } : score;
 }
 
+/**
+ * Re-mark bracket boundaries for a tuplet built from `noteIds` in any drop order:
+ * `start` goes on the earliest note in score order, and `stop` on the latest once
+ * the group is `complete`.
+ */
+export function markTupletGroup(score: Score, noteIds: string[], complete: boolean): Score {
+  const members = new Set(noteIds);
+  const ordered = score.measures.flatMap((m) => m.notes.filter((n) => members.has(n.id)));
+  const firstId = ordered[0]?.id;
+  const lastId = complete ? ordered[ordered.length - 1]?.id : undefined;
+  return {
+    ...score,
+    measures: score.measures.map((measure) => ({
+      ...measure,
+      notes: measure.notes.map((note) => {
+        if (!members.has(note.id) || !note.tuplet) return note;
+        const { start: _start, stop: _stop, ...ratio } = note.tuplet;
+        return {
+          ...note,
+          tuplet: {
+            ...ratio,
+            ...(note.id === firstId ? { start: true } : {}),
+            ...(note.id === lastId ? { stop: true } : {}),
+          },
+        };
+      }),
+    })),
+  };
+}
+
 export function removeNote(score: Score, noteId: string): Score {
   return {
     ...score,

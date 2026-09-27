@@ -19,7 +19,7 @@ import { scoreToRenderInstructions, snapStaffY, yToPitch } from '../lib/vexflow-
 import type { RenderMeasure, RenderScore } from '../lib/vexflow-render';
 import type { Duration } from '../lib/score-model';
 import { formatMeasureBeats, isRest, measureBeatStatus } from '../lib/score-model';
-import { PITCHED_NOTE_MIME } from './NotePalette';
+import { PITCHED_NOTE_MIME, paletteLabelFor } from './NotePalette';
 
 const EMPTY_MEASURE_WIDTH = 120;
 const DEFAULT_SYSTEM_START_EXTRA = 80;
@@ -28,6 +28,8 @@ const SYSTEM_GAP = 40;
 const MEASURES_PER_SYSTEM = 4;
 const LINE_SPACING = 10;
 const STAFF_TOP_OFFSET = 40;
+/** Keep in sync with `--selected` in index.css (VexFlow styles need a literal color). */
+const SELECTED_COLOR = '#16a34a';
 const MEASURE_PADDING_PX = 26;
 const ACCIDENTAL_ALLOWANCE_PX = 10;
 const GRACE_ALLOWANCE_PX = 12;
@@ -43,6 +45,8 @@ type Props = {
   score: Score;
   practiceMode: boolean;
   showMeasureNumbers: boolean;
+  /** Troubleshooting tags under each note: stored value and the palette button it maps to. */
+  showNoteLabels?: boolean;
   hiddenMeasureIds: ReadonlySet<string>;
   selectedNoteId: string | null;
   onSelectNote: (noteId: string | null) => void;
@@ -142,6 +146,47 @@ export function dropTargetFromX(
   return { kind: 'insert', ...insertSlotFromX(localX, noteCentersX, measureWidth) };
 }
 
+/**
+ * Ink bounds of a note's heads (or rest glyph) in SVG/overlay pixels, excluding stem and flag.
+ * DOM rects of VexFlow's glyph `<text>` span the font's whole line box, so use VexFlow's
+ * canvas-measured metrics instead.
+ */
+function noteheadBox(note: StaveNote): { left: number; top: number; right: number; bottom: number } {
+  const boxes = note.noteHeads
+    .map((head) => head.getBoundingBox())
+    .filter((b) => b.getW() > 0 && b.getH() > 0 && Number.isFinite(b.getX() + b.getY()));
+  if (boxes.length > 0) {
+    return {
+      left: Math.min(...boxes.map((b) => b.getX())),
+      top: Math.min(...boxes.map((b) => b.getY())),
+      right: Math.max(...boxes.map((b) => b.getX() + b.getW())),
+      bottom: Math.max(...boxes.map((b) => b.getY() + b.getH())),
+    };
+  }
+  const { yTop, yBottom } = note.getNoteHeadBounds();
+  return {
+    left: note.getNoteHeadBeginX(),
+    top: Math.min(yTop, yBottom) - LINE_SPACING / 2,
+    right: note.getNoteHeadEndX(),
+    bottom: Math.max(yTop, yBottom) + LINE_SPACING / 2,
+  };
+}
+
+/** Noteheads plus stem, for the click/drag target. */
+function noteHitBox(note: StaveNote): { left: number; top: number; right: number; bottom: number } {
+  const box = noteheadBox(note);
+  if (note.isRest() || !note.hasStem()) return box;
+  const { topY, baseY } = note.getStemExtents();
+  const stemX = note.getStemX();
+  if (![topY, baseY, stemX].every(Number.isFinite)) return box;
+  return {
+    left: Math.min(box.left, stemX),
+    top: Math.min(box.top, topY, baseY),
+    right: Math.max(box.right, stemX),
+    bottom: Math.max(box.bottom, topY, baseY),
+  };
+}
+
 const VEX_BASE_BEATS: Record<string, number> = {
   w: 4,
   h: 2,
@@ -234,7 +279,7 @@ function buildMeasureNotes(
       note.addModifier(new GraceNoteGroup(graceNotes).beamNotes());
     }
     if (n.id === selectedNoteId) {
-      note.setStyle({ fillStyle: '#c2410c', strokeStyle: '#c2410c' });
+      note.setStyle({ fillStyle: SELECTED_COLOR, strokeStyle: SELECTED_COLOR });
     }
     note.setAttribute('id', n.id);
     return note;
@@ -346,6 +391,7 @@ export function ScoreCanvas({
   score,
   practiceMode,
   showMeasureNumbers,
+  showNoteLabels = false,
   hiddenMeasureIds,
   selectedNoteId,
   onSelectNote,
@@ -643,8 +689,6 @@ export function ScoreCanvas({
         beams.forEach((beam) => beam.setContext(context).draw());
         tuplets.forEach((tuplet) => tuplet.setContext(context).draw());
 
-        const overlayRect = overlay.getBoundingClientRect();
-
         vfNotes.forEach((vfNote, i) => {
           const noteId = measure.notes[i]?.id;
           if (!noteId) return;
@@ -657,17 +701,54 @@ export function ScoreCanvas({
 
           if (practiceMode) return;
 
-          const noteRect = el.getBoundingClientRect();
-          const pad = 10;
+          const scoreNote = score.measures[measureNumber]?.notes[i];
+          if (showNoteLabels && scoreNote) {
+            const button = paletteLabelFor(scoreNote.duration);
+            const extras = [
+              scoreNote.chord?.length ? `+${scoreNote.chord.length}` : '',
+              scoreNote.tuplet ? `${scoreNote.tuplet.actual}:${scoreNote.tuplet.normal}` : '',
+            ].filter(Boolean);
+            const label = document.createElement('div');
+            label.className = 'note-label no-print';
+            if (noteId === selectedNoteId) label.classList.add('is-selected');
+            if (!button) label.classList.add('is-unmapped');
+            label.dataset.noteId = noteId;
+            label.style.left = `${vfNote.getAbsoluteX() + 5}px`;
+            // Alternate rows so neighbouring labels in dense bars (16ths, 32nds) don't overlap.
+            label.style.top = `${y + STAVE_HEIGHT - 4 + (i % 2) * 22}px`;
+            const code = document.createElement('span');
+            code.textContent = [scoreNote.duration, ...extras].join(' ');
+            const name = document.createElement('span');
+            name.textContent = button ?? 'no button';
+            label.append(code, name);
+            label.title = `${scoreNote.pitch}${scoreNote.octave} · value "${scoreNote.duration}" · button: ${button ?? 'none'} · id ${noteId}`;
+            overlay.appendChild(label);
+          }
+
+          const hitBox = noteHitBox(vfNote);
+          const padX = 6;
+          const padY = 4;
           const noteHit = document.createElement('div');
           noteHit.className = 'note-hit';
           if (noteId === selectedNoteId) noteHit.classList.add('is-selected');
           noteHit.dataset.noteId = noteId;
-          noteHit.style.left = `${noteRect.left - overlayRect.left - pad}px`;
-          noteHit.style.top = `${noteRect.top - overlayRect.top - pad}px`;
-          noteHit.style.width = `${Math.max(noteRect.width, 12) + pad * 2}px`;
-          noteHit.style.height = `${Math.max(noteRect.height, 12) + pad * 2}px`;
+          noteHit.style.left = `${hitBox.left - padX}px`;
+          noteHit.style.top = `${hitBox.top - padY}px`;
+          noteHit.style.width = `${Math.max(hitBox.right - hitBox.left, 12) + padX * 2}px`;
+          noteHit.style.height = `${Math.max(hitBox.bottom - hitBox.top, 12) + padY * 2}px`;
           noteHit.title = 'Drag to move note';
+
+          if (noteId === selectedNoteId) {
+            const box = noteheadBox(vfNote);
+            const outlinePad = 3;
+            const outline = document.createElement('div');
+            outline.className = 'note-outline';
+            outline.style.left = `${box.left - outlinePad}px`;
+            outline.style.top = `${box.top - outlinePad}px`;
+            outline.style.width = `${box.right - box.left + outlinePad * 2}px`;
+            outline.style.height = `${box.bottom - box.top + outlinePad * 2}px`;
+            overlay.appendChild(outline);
+          }
 
           noteHit.addEventListener('pointerdown', (ev) => {
             if (ev.button !== 0) return;
@@ -738,7 +819,7 @@ export function ScoreCanvas({
     return () => {
       document.body.classList.remove('note-dragging');
     };
-  }, [score, practiceMode, showMeasureNumbers, hiddenMeasureIds, selectedNoteId]);
+  }, [score, practiceMode, showMeasureNumbers, showNoteLabels, hiddenMeasureIds, selectedNoteId]);
 
   return (
     <div className="score-canvas-wrap" data-testid="score-canvas">

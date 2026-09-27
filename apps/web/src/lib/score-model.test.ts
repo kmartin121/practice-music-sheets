@@ -6,6 +6,7 @@ import {
   createBlankScore,
   durationBeats,
   formatMeasureBeats,
+  markTupletGroup,
   measureBeatStatus,
   measureFilledBeats,
   measureOverflows,
@@ -80,6 +81,31 @@ describe('score-model', () => {
   it('scales tuplet notes to their sounding length', () => {
     expect(noteBeats({ duration: '8', tuplet: { actual: 3, normal: 2 } })).toBeCloseTo(1 / 3);
     expect(noteBeats({ duration: 'q' })).toBe(1);
+  });
+
+  it('marks tuplet bracket ends by score order, whatever order notes were dropped in', () => {
+    const blank = createBlankScore({ measureCount: 1 });
+    const measureId = blank.measures[0].id;
+    const t = { actual: 3, normal: 2 };
+    let score = blank;
+    // Each drop lands at the front of the bar, so drop order is the reverse of score order.
+    for (const id of ['a', 'b', 'c']) {
+      score = addNoteToMeasure(score, measureId, { id, pitch: 'C', octave: 5, duration: 'q', tuplet: t }, 0);
+    }
+
+    const partial = markTupletGroup(score, ['a', 'b'], false);
+    expect(partial.measures[0].notes.map((n) => [n.id, n.tuplet])).toEqual([
+      ['c', t],
+      ['b', { ...t, start: true }],
+      ['a', t],
+    ]);
+
+    const complete = markTupletGroup(partial, ['a', 'b', 'c'], true);
+    expect(complete.measures[0].notes.map((n) => [n.id, n.tuplet])).toEqual([
+      ['c', { ...t, start: true }],
+      ['b', t],
+      ['a', { ...t, stop: true }],
+    ]);
   });
 
   it('reports whether a measure meets its beat count', () => {

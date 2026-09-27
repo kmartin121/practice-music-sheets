@@ -6,6 +6,7 @@ import {
   addNoteToMeasure,
   copyNote,
   createId,
+  markTupletGroup,
   measureOverflows,
   reflowOverflow,
   relocateNote,
@@ -48,8 +49,11 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
   const [dirty, setDirty] = useState(false);
   const [practiceMode, setPracticeMode] = useState(false);
   const [showMeasureNumbers, setShowMeasureNumbers] = useState(true);
+  const [showNoteLabels, setShowNoteLabels] = useState(false);
   const [hiddenMeasureIds, setHiddenMeasureIds] = useState<Set<string>>(() => new Set());
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  /** Ids of notes dropped into the pending triplet; `null` when triplet entry is off. */
+  const [tripletIds, setTripletIds] = useState<string[] | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [musicXmlText, setMusicXmlText] = useState(meta.sourceXml ?? serializeMusicXml(initialScore));
   const [showMusicXml, setShowMusicXml] = useState(Boolean(meta.fromOmr || meta.sourceXml));
@@ -63,6 +67,15 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
     () => (meta.fromOmr && meta.sourceXml ? countMusicXmlNoteElements(meta.sourceXml) : 0),
     [meta.fromOmr, meta.sourceXml],
   );
+
+  const selectedDuration = useMemo(() => {
+    if (!selectedNoteId) return null;
+    for (const measure of score.measures) {
+      const note = measure.notes.find((n) => n.id === selectedNoteId);
+      if (note) return note.duration;
+    }
+    return null;
+  }, [score, selectedNoteId]);
 
   const overflowing = useMemo(
     () => score.measures.some((m) => measureOverflows(score, m)),
@@ -90,6 +103,8 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
     if (!previous) return;
     setUndoStack(undoStack.slice(0, -1));
     lastEditKindRef.current = null;
+    // The pending triplet's count no longer matches the notes on the staff.
+    setTripletIds(null);
     setScore(previous);
     setDirty(true);
     setStatus(null);
@@ -133,24 +148,30 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
       index?: number,
     ) => {
       const id = createId('note');
-      markDirty(
-        reflowOverflow(
-          addNoteToMeasure(
-            score,
-            measureId,
-            {
-              id,
-              pitch,
-              octave,
-              duration,
-            },
-            index,
-          ),
+      let next = reflowOverflow(
+        addNoteToMeasure(
+          score,
+          measureId,
+          {
+            id,
+            pitch,
+            octave,
+            duration,
+            ...(tripletIds ? { tuplet: { actual: 3, normal: 2 } } : {}),
+          },
+          index,
         ),
       );
+      if (tripletIds) {
+        const group = [...tripletIds, id];
+        const complete = group.length === 3;
+        next = markTupletGroup(next, group, complete);
+        setTripletIds(complete ? null : group);
+      }
+      markDirty(next);
       setSelectedNoteId(id);
     },
-    [markDirty, score],
+    [markDirty, score, tripletIds],
   );
 
   const onAddChordTone = useCallback(
@@ -231,6 +252,7 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
           dirty={dirty}
           practiceMode={practiceMode}
           showMeasureNumbers={showMeasureNumbers}
+          showNoteLabels={showNoteLabels}
           selectedNoteId={selectedNoteId}
           canSave={Boolean(meta.dir)}
           showMusicXml={showMusicXml}
@@ -245,6 +267,7 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
           }
           onTogglePractice={() => setPracticeMode((p) => !p)}
           onToggleMeasureNumbers={() => setShowMeasureNumbers((v) => !v)}
+          onToggleNoteLabels={() => setShowNoteLabels((v) => !v)}
           onSave={() => void save(false)}
           onSaveAs={() => void save(true)}
           onPrint={() => window.print()}
@@ -263,7 +286,12 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
           onAddMeasure={() => markDirty(addEmptyMeasure(score))}
           onBack={onBack}
         />
-        <NotePalette disabled={practiceMode} />
+        <NotePalette
+          disabled={practiceMode}
+          selectedDuration={selectedDuration}
+          tripletPlaced={tripletIds?.length ?? null}
+          onToggleTriplet={() => setTripletIds((ids) => (ids === null ? [] : null))}
+        />
       </div>
       {meta.fromOmr && (
         <p className="status no-print" data-testid="omr-summary">
@@ -316,6 +344,7 @@ export function Editor({ initialScore, meta, onBack, onMetaChange }: Props) {
           score={score}
           practiceMode={practiceMode}
           showMeasureNumbers={showMeasureNumbers}
+          showNoteLabels={showNoteLabels}
           hiddenMeasureIds={hiddenMeasureIds}
           selectedNoteId={selectedNoteId}
           onSelectNote={setSelectedNoteId}

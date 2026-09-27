@@ -19,6 +19,24 @@ describe('NotePalette', () => {
       JSON.stringify({ duration: 'q' }),
     );
   });
+
+  it('highlights the button matching the selected note value', () => {
+    const { rerender } = render(<NotePalette selectedDuration="q" />);
+    expect(screen.getByTitle('Quarter')).toHaveClass('is-selected');
+    expect(document.querySelectorAll('.palette-item.is-selected')).toHaveLength(1);
+
+    rerender(<NotePalette selectedDuration="qd" />);
+    expect(screen.getByTitle('Quarter')).toHaveClass('is-selected');
+
+    rerender(<NotePalette selectedDuration="32" />);
+    expect(screen.getByTitle('32nd')).toHaveClass('is-selected');
+
+    rerender(<NotePalette selectedDuration="hdr" />);
+    expect(screen.getByTitle('Dotted half rest')).toHaveClass('is-selected');
+
+    rerender(<NotePalette selectedDuration={null} />);
+    expect(document.querySelectorAll('.palette-item.is-selected')).toHaveLength(0);
+  });
 });
 
 describe('Editor practice + dirty state', () => {
@@ -85,6 +103,51 @@ describe('Editor practice + dirty state', () => {
     );
     expect(document.querySelectorAll('.measure-hit')).toHaveLength(2);
     expect(document.querySelectorAll('.score-svg svg .vf-tuplet')).toHaveLength(1);
+  });
+
+  it('brackets the next three dropped notes as a triplet when the toggle is on', () => {
+    render(
+      <Editor
+        initialScore={createBlankScore({ title: 'Triplets', measureCount: 1 })}
+        meta={{ filename: null, fileHandle: null, dir: null }}
+        onBack={() => undefined}
+        onMetaChange={() => undefined}
+      />,
+    );
+    const toggle = screen.getByTestId('triplet-toggle');
+    const dropQuarter = () => {
+      // jsdom lacks DragEvent; MouseEvent carries the coordinates the canvas reads.
+      // Far right of the bar so drops insert instead of snapping onto a chord.
+      const drop = new MouseEvent('drop', { bubbles: true, cancelable: true, clientX: 10_000, clientY: 50 });
+      Object.defineProperty(drop, 'dataTransfer', {
+        value: { getData: () => JSON.stringify({ duration: 'q' }), types: [] },
+      });
+      fireEvent(document.querySelector('.measure-hit')!, drop);
+    };
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(toggle).toHaveTextContent('Triplet 0/3');
+    expect(screen.getByTestId('palette-hint')).toHaveTextContent('Drag 3 more notes');
+
+    dropQuarter();
+    dropQuarter();
+    expect(toggle).toHaveTextContent('Triplet 2/3');
+    dropQuarter();
+
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(toggle).toHaveTextContent(/^Triplet$/);
+    expect(document.querySelectorAll('.note-hit')).toHaveLength(3);
+    expect(document.querySelectorAll('.score-svg svg .vf-tuplet')).toHaveLength(1);
+
+    dropQuarter();
+    expect(document.querySelectorAll('.note-hit')).toHaveLength(4);
+    fireEvent.click(screen.getByTestId('musicxml-toggle'));
+    fireEvent.click(screen.getByText('Refresh from score'));
+    const xml = (screen.getByLabelText('MusicXML source') as HTMLTextAreaElement).value;
+    expect(xml.match(/<time-modification>/g)).toHaveLength(3);
+    expect(xml.match(/<tuplet type="start"\/>/g)).toHaveLength(1);
+    expect(xml.match(/<tuplet type="stop"\/>/g)).toHaveLength(1);
   });
 
   it('renders a memorize cue when a practice-hidden measure is active', () => {
@@ -169,12 +232,62 @@ describe('Editor practice + dirty state', () => {
       );
       fireEvent(window, new MouseEvent('pointerup', { button: 0 }));
       expect(screen.getByTestId('delete-note')).toBeEnabled();
+      expect(screen.getByTitle('Quarter')).toHaveClass('is-selected');
+      expect(document.querySelectorAll('.note-outline')).toHaveLength(1);
       fireEvent.click(screen.getByTestId('delete-note'));
+      expect(document.querySelectorAll('.palette-item.is-selected')).toHaveLength(0);
+      expect(document.querySelectorAll('.note-outline')).toHaveLength(0);
       expect(document.querySelectorAll('.note-hit')).toHaveLength(0);
 
       fireEvent.click(screen.getByTestId('undo'));
       expect(document.querySelectorAll('.note-hit')).toHaveLength(1);
       expect(screen.getByTestId('undo')).toBeDisabled();
+    });
+
+    it('highlights the palette value when a chord is selected', () => {
+      const blank = createBlankScore({ title: 'Test', measureCount: 1 });
+      renderEditor(
+        addNoteToMeasure(blank, blank.measures[0].id, {
+          pitch: 'F',
+          octave: 4,
+          duration: 'h',
+          chord: [{ pitch: 'A', octave: 4 }, { pitch: 'C', octave: 5 }],
+        }),
+      );
+      fireEvent(
+        document.querySelector('.note-hit')!,
+        new MouseEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      fireEvent(window, new MouseEvent('pointerup', { button: 0 }));
+      expect(screen.getByTestId('delete-note')).toBeEnabled();
+      expect(screen.getByTitle('Half')).toHaveClass('is-selected');
+    });
+
+    it('labels each note with its value and matching palette button when Labels is on', () => {
+      const blank = createBlankScore({ title: 'Test', measureCount: 1 });
+      const measureId = blank.measures[0].id;
+      let score = addNoteToMeasure(blank, measureId, {
+        pitch: 'F',
+        octave: 4,
+        duration: 'q',
+        chord: [{ pitch: 'A', octave: 4 }],
+      });
+      score = addNoteToMeasure(score, measureId, { pitch: 'G', octave: 4, duration: 'qd' });
+      score = addNoteToMeasure(score, measureId, { pitch: 'A', octave: 4, duration: '32' });
+      renderEditor(score);
+      expect(document.querySelectorAll('.note-label')).toHaveLength(0);
+
+      fireEvent.click(screen.getByTestId('note-labels-toggle'));
+      const labels = [...document.querySelectorAll('.note-label')].map((l) => l.textContent);
+      expect(labels).toEqual(['q +1Quarter', 'qdQuarter', '3232nd']);
+      expect(document.querySelectorAll('.note-label.is-unmapped')).toHaveLength(0);
+
+      fireEvent(
+        document.querySelector('.note-hit')!,
+        new MouseEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      fireEvent(window, new MouseEvent('pointerup', { button: 0 }));
+      expect(document.querySelector('.note-label.is-selected')?.textContent).toBe('q +1Quarter');
     });
 
     it('reverts an added bar with Ctrl+Z outside text fields', () => {
